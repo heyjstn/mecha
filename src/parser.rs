@@ -1,7 +1,7 @@
-use ariadne::{Color, Label, Report, ReportKind, Source};
 use crate::ast::{ColumnAttribute, ColumnDef, Index, RefOperator, ReferenceDef, Schema, TableDef};
 use crate::lexer;
 use crate::lexer::Token;
+use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::error::Rich;
 use chumsky::input::ValueInput;
 use chumsky::prelude::{SimpleSpan, end};
@@ -27,11 +27,13 @@ where
 {
     let abstract_flag = select! { Token::Abstract => true }
         .or_not()
-        .map(|opt| opt.unwrap_or(false));
+        .map(|opt| opt.unwrap_or(false))
+        .labelled("'abstract'");
 
     let extends_clause = select! { Token::Extends => () }
         .ignore_then(ident_string())
-        .or_not();
+        .or_not()
+        .labelled("'extends'");
 
     abstract_flag
         .then_ignore(select! { Token::Table => () })
@@ -57,7 +59,7 @@ where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
     ident_string()
-        .then_ignore(select! { Token::Colon => () })
+        .then_ignore(select! { Token::Colon => () }.labelled("':'"))
         .then(ident_string())
         .then(column_attribute_parser().or_not())
         .then(reference_parser().or_not())
@@ -77,7 +79,7 @@ where
     select! {
         Token::Primary => ColumnAttribute::Primary,
         Token::Unique  => ColumnAttribute::Unique,
-    }
+    }.labelled("'primary' or 'unique'")
 }
 
 fn column_list_parser<'tokens, 'src: 'tokens, I>()
@@ -99,6 +101,7 @@ where
     select! {
         Token::Id(name) => name.to_string(),
     }
+    .labelled("id")
 }
 
 fn ref_operator_parser<'tokens, 'src: 'tokens, I>()
@@ -111,6 +114,7 @@ where
         Token::RefOneToOne    => RefOperator::OneToOne,
         Token::RefManyToMany  => RefOperator::ManyToMany,
     }
+    .labelled("ref operators given '==>, ==, <>'")
 }
 
 fn reference_parser<'tokens, 'src: 'tokens, I>()
@@ -119,12 +123,13 @@ where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
     select! { Token::LeftParen => () }
-        .ignore_then(select! { Token::Ref => () })
+        .labelled("'('")
+        .ignore_then(select! { Token::Ref => () }.labelled("'ref'"))
         .ignore_then(ref_operator_parser())
-        .then(ident_string()) // table name
-        .then_ignore(select! { Token::Dot => () })
-        .then(ident_string()) // column name
-        .then_ignore(select! { Token::RightParen => () })
+        .then(ident_string())
+        .then_ignore(select! { Token::Dot => () }.labelled("'.'"))
+        .then(ident_string())
+        .then_ignore(select! { Token::RightParen => () }.labelled("')'"))
         .map(|((operator, table), column)| ReferenceDef {
             operator,
             table,
@@ -137,14 +142,14 @@ fn composite_index_parser<'tokens, 'src: 'tokens, I>()
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
-    select! { Token::LeftParen => () }
+    select! { Token::LeftParen => () }.labelled("'('")
         .ignore_then(
             ident_string()
-                .separated_by(select! { Token::Comma => () })
+                .separated_by(select! { Token::Comma => () }.labelled("','"))
                 .at_least(2)
                 .collect::<Vec<_>>(),
         )
-        .then_ignore(select! { Token::RightParen => () })
+        .then_ignore(select! { Token::RightParen => () }.labelled("')'"))
         .map(Index::Composite)
 }
 
@@ -256,8 +261,8 @@ fn test_multiple_table() {
 #[test]
 fn test_invalid_table_should_false() {
     let schema: &str = r"
-        abstract table : {
-            created_at: timestamp,
+        abstract table foo extends bar {
+            created_at timestamp,
             updated_at: timestamp
         }
     ";
