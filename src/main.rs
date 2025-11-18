@@ -2,12 +2,12 @@ extern crate core;
 
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::error::Rich;
-use chumsky::input::Stream;
-use chumsky::input::{Input, ValueInput};
-use chumsky::prelude::{end, SimpleSpan};
-use chumsky::{extra, IterParser};
-use chumsky::{select, Parser};
+use chumsky::input::{Input, Stream, ValueInput};
+use chumsky::prelude::{SimpleSpan, end};
+use chumsky::{IterParser, extra};
+use chumsky::{Parser, select};
 use logos::Logos;
+use std::fmt::{Display, Formatter};
 
 #[derive(Logos, Clone, PartialEq)]
 enum Token<'a> {
@@ -61,6 +61,34 @@ enum Token<'a> {
     Whitespace,
 }
 
+impl<'a> Display for Token<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Token::Err => write!(f, "<error>"),
+            Token::Abstract => write!(f, "abstract"),
+            Token::Table => write!(f, "table"),
+            Token::Extends => write!(f, "extends"),
+            Token::Id(name) => write!(f, "Id<{name}>"),
+            Token::LeftBrace => write!(f, "{{"),
+            Token::RightBrace => write!(f, "}}"),
+            Token::LeftParen => write!(f, "("),
+            Token::RightParen => write!(f, ")"),
+            Token::Primary => write!(f, "primary"),
+            Token::Unique => write!(f, "unique"),
+            Token::Ref => write!(f, "ref"),
+            Token::RefOneToMany => write!(f, "=>"),
+            Token::RefOneToOne => write!(f, "=="),
+            Token::RefManyToMany => write!(f, "<>"),
+            Token::Dot => write!(f, "."),
+            Token::Comma => write!(f, ","),
+            Token::Colon => write!(f, ":"),
+            Token::Indexes => write!(f, "indexes"),
+            Token::Whitespace => write!(f, "<whitespace>"),
+            _ => write!(f, "<unexisted>"),
+        }
+    }
+}
+
 // AST structs
 #[derive(Debug)]
 enum RefOperator {
@@ -75,8 +103,11 @@ pub enum Index {
     Composite(Vec<String>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub enum ColumnAttribute {
+    #[default]
+    None, // todo: remove later
+
     Primary,
     Unique,
 }
@@ -90,7 +121,7 @@ struct Schema {
 struct TableDef {
     name: String,
     is_abstract: bool,
-    extended_by: String,
+    extended_by: Option<String>,
     columns: Vec<ColumnDef>,
 }
 
@@ -98,7 +129,7 @@ struct TableDef {
 struct ColumnDef {
     name: String,
     typ: String,
-    index: IndexDef,
+    attribute: Option<ColumnAttribute>,
     reference: Option<ReferenceDef>,
 }
 
@@ -126,7 +157,7 @@ where
 }
 
 fn table_parser<'tokens, 'src: 'tokens, I>()
-    -> impl Parser<'tokens, I, TableDef, extra::Err<Rich<'tokens, Token<'src>>>>
+-> impl Parser<'tokens, I, TableDef, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
@@ -151,13 +182,13 @@ where
                 name,
                 is_abstract,
                 columns,
-                extended_by: "".to_string(),
+                extended_by: extends,
             },
         )
 }
 
 fn column_definition_parser<'tokens, 'src: 'tokens, I>()
-    -> impl Parser<'tokens, I, ColumnDef, extra::Err<Rich<'tokens, Token<'src>>>>
+-> impl Parser<'tokens, I, ColumnDef, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
@@ -169,14 +200,13 @@ where
         .map(|(((name, typ), attr_opt), ref_opt)| ColumnDef {
             name,
             typ,
-            // attribute: attr_opt,
-            index: IndexDef {},
+            attribute: attr_opt,
             reference: ref_opt,
         })
 }
 
 fn column_attribute_parser<'tokens, 'src: 'tokens, I>()
-    -> impl Parser<'tokens, I, ColumnAttribute, extra::Err<Rich<'tokens, Token<'src>>>>
+-> impl Parser<'tokens, I, ColumnAttribute, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
@@ -187,7 +217,7 @@ where
 }
 
 fn column_list_parser<'tokens, 'src: 'tokens, I>()
-    -> impl Parser<'tokens, I, Vec<ColumnDef>, extra::Err<Rich<'tokens, Token<'src>>>>
+-> impl Parser<'tokens, I, Vec<ColumnDef>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
@@ -198,7 +228,7 @@ where
 }
 
 fn ident_string<'tokens, 'src: 'tokens, I>()
-    -> impl Parser<'tokens, I, String, extra::Err<Rich<'tokens, Token<'src>>>>
+-> impl Parser<'tokens, I, String, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
@@ -208,7 +238,7 @@ where
 }
 
 fn ref_operator_parser<'tokens, 'src: 'tokens, I>()
-    -> impl Parser<'tokens, I, RefOperator, extra::Err<Rich<'tokens, Token<'src>>>>
+-> impl Parser<'tokens, I, RefOperator, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
@@ -220,7 +250,7 @@ where
 }
 
 fn reference_parser<'tokens, 'src: 'tokens, I>()
-    -> impl Parser<'tokens, I, ReferenceDef, extra::Err<Rich<'tokens, Token<'src>>>>
+-> impl Parser<'tokens, I, ReferenceDef, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
@@ -239,7 +269,7 @@ where
 }
 
 fn composite_index_parser<'tokens, 'src: 'tokens, I>()
-    -> impl Parser<'tokens, I, Index, extra::Err<Rich<'tokens, Token<'src>>>>
+-> impl Parser<'tokens, I, Index, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
@@ -255,7 +285,7 @@ where
 }
 
 fn index_item_parser<'tokens, 'src: 'tokens, I>()
-    -> impl Parser<'tokens, I, Index, extra::Err<Rich<'tokens, Token<'src>>>>
+-> impl Parser<'tokens, I, Index, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
@@ -263,7 +293,7 @@ where
 }
 
 fn index_section_parser<'tokens, 'src: 'tokens, I>()
-    -> impl Parser<'tokens, I, Vec<Index>, extra::Err<Rich<'tokens, Token<'src>>>>
+-> impl Parser<'tokens, I, Vec<Index>, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
@@ -278,14 +308,8 @@ where
         .then_ignore(select! { Token::RightBrace => () })
 }
 
-const SRC: &str = r"
-    abstract tablex foo extends bar {
-        id: string
-    }
-";
-
-fn main() {
-    let token_iter = Token::lexer(SRC).spanned().map(|(tok, span)| match tok {
+fn parse(src: &str) {
+    let token_iter = Token::lexer(src).spanned().map(|(tok, span)| match tok {
         Ok(tok) => {
             let simple_span: SimpleSpan = span.into();
             (tok, simple_span)
@@ -294,7 +318,7 @@ fn main() {
     });
 
     let token_stream =
-        Stream::from_iter(token_iter).map((0..SRC.len()).into(), |(t, s): (_, _)| (t, s));
+        Stream::from_iter(token_iter).map((0..src.len()).into(), |(t, s): (_, _)| (t, s));
 
     match schema_parser().parse(token_stream).into_result() {
         Ok(schema) => println!("{:?}", schema),
@@ -303,16 +327,48 @@ fn main() {
                 Report::build(ReportKind::Error, ((), err.span().into_range()))
                     .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
                     .with_code(3)
-                    // .with_message(err.to_string())
+                    .with_message(err.to_string())
                     .with_label(
                         Label::new(((), err.span().into_range()))
-                            // .with_message(err.reason().to_string())
+                            .with_message(err.reason().to_string())
                             .with_color(Color::Red),
                     )
                     .finish()
-                    .eprint(Source::from(SRC))
+                    .eprint(Source::from(src))
                     .unwrap();
             }
         }
     }
 }
+
+#[test]
+fn test_simple_table() {
+    let schema: &str = r"
+        table foo {
+            id: string
+        }
+    ";
+    parse(schema)
+}
+
+#[test]
+fn test_abstract_table() {
+    let schema: &str = r"
+        abstract table foo {
+            id: string
+        }
+    ";
+    parse(schema)
+}
+
+#[test]
+fn test_abstract_table_extends() {
+    let program: &str = r"
+        abstract table foo extends bar {
+            id: string
+        }
+    ";
+    parse(program)
+}
+
+fn main() {}
