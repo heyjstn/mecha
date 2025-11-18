@@ -2,9 +2,9 @@
 
 # Mecha
 
-[![image](https://img.shields.io/pypi/l/ruff.svg)](https://github.com/heyjstn/mecha/blob/main/LICENSE)
+[![image](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/heyjstn/mecha/blob/main/LICENSE)
 
-[**Docs**](https://mecha.heyjstn.dev/docs/) | [**Playground**](https://mecha.heyjstn.dev/)
+[**Docs**](https://mecha.heyjstn.dev/docs/) | [**Playground**](https://mecha.heyjstn.dev/) | [**Contact**](mailto:lwuminhtris@gmail.com)
 
 An elegant and flexible language to describe your schema design, written in Rust
 
