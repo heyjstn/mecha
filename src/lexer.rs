@@ -4,6 +4,7 @@ use chumsky::input::{Input, Stream, ValueInput};
 use chumsky::prelude::SimpleSpan;
 
 #[derive(Logos, Clone, PartialEq)]
+#[derive(Debug)]
 pub enum Token<'a> {
     Err,
 

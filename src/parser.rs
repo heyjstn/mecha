@@ -1,3 +1,4 @@
+use ariadne::{Color, Label, Report, ReportKind, Source};
 use crate::ast::{ColumnAttribute, ColumnDef, Index, RefOperator, ReferenceDef, Schema, TableDef};
 use crate::lexer;
 use crate::lexer::Token;
@@ -171,7 +172,7 @@ where
         .then_ignore(select! { Token::RightBrace => () })
 }
 
-fn parse(src: &'_ str) -> Result<Schema, Vec<Rich<'_, Token<'_>>>> {
+pub fn parse(src: &'_ str) -> Result<Schema, Vec<Rich<'_, Token<'_>>>> {
     let tokens = lexer::tokenize(src);
     schema_parser().parse(tokens).into_result()
     // match schema_parser().parse(tokens).into_result() {
@@ -249,5 +250,34 @@ fn test_multiple_table() {
     match parse(schema) {
         Ok(schema) => assert!(schema.tables.len() > 0),
         Err(_) => panic!("test failed"),
+    }
+}
+
+#[test]
+fn test_invalid_table_should_false() {
+    let schema: &str = r"
+        abstract table : {
+            created_at: timestamp,
+            updated_at: timestamp
+        }
+    ";
+    match parse(schema) {
+        Ok(schema) => assert!(schema.tables.len() > 0),
+        Err(errs) => {
+            for err in errs {
+                Report::build(ReportKind::Error, ((), err.span().into_range()))
+                    .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
+                    .with_code(11)
+                    .with_message(err.to_string())
+                    .with_label(
+                        Label::new(((), err.span().into_range()))
+                            .with_message(err.reason().to_string())
+                            .with_color(Color::Red),
+                    )
+                    .finish()
+                    .eprint(Source::from(schema))
+                    .unwrap();
+            }
+        }
     }
 }
