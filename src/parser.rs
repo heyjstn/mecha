@@ -1,11 +1,10 @@
-use chumsky::{extra, select, IterParser, Parser};
-use chumsky::error::Rich;
-use chumsky::input::ValueInput;
-use chumsky::prelude::{end, SimpleSpan};
-use ariadne::{Color, Label, Report, ReportKind, Source};
 use crate::ast::{ColumnAttribute, ColumnDef, Index, RefOperator, ReferenceDef, Schema, TableDef};
 use crate::lexer;
 use crate::lexer::Token;
+use chumsky::error::Rich;
+use chumsky::input::ValueInput;
+use chumsky::prelude::{SimpleSpan, end};
+use chumsky::{IterParser, Parser, extra, select};
 
 fn schema_parser<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Schema, extra::Err<Rich<'tokens, Token<'src>>>>
@@ -35,14 +34,14 @@ where
 
     abstract_flag
         .then_ignore(select! { Token::Table => () })
-        .then(ident_string()) // table name
-        .then(extends_clause) // Option<String>
+        .then(ident_string())
+        .then(extends_clause)
         .then_ignore(select! { Token::LeftBrace => () })
-        .then(column_list_parser()) // Vec<ColumnDefinition>
-        .then(index_section_parser().or_not()) // Option<Vec<Index>>
+        .then(column_list_parser())
+        .then(index_section_parser().or_not())
         .then_ignore(select! { Token::RightBrace => () })
         .map(
-            |((((is_abstract, name), extends), columns), indexes_opt)| TableDef {
+            |((((is_abstract, name), extends), columns), _indexes_opt)| TableDef {
                 name,
                 is_abstract,
                 columns,
@@ -172,28 +171,28 @@ where
         .then_ignore(select! { Token::RightBrace => () })
 }
 
-fn parse(src: &str) {
+fn parse(src: &'_ str) -> Result<Schema, Vec<Rich<'_, Token<'_>>>> {
     let tokens = lexer::tokenize(src);
-
-    match schema_parser().parse(tokens).into_result() {
-        Ok(schema) => println!("{:?}", schema),
-        Err(errs) => {
-            for err in errs {
-                Report::build(ReportKind::Error, ((), err.span().into_range()))
-                    .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
-                    .with_code(3)
-                    .with_message(err.to_string())
-                    .with_label(
-                        Label::new(((), err.span().into_range()))
-                            .with_message(err.reason().to_string())
-                            .with_color(Color::Red),
-                    )
-                    .finish()
-                    .eprint(Source::from(src))
-                    .unwrap();
-            }
-        }
-    }
+    schema_parser().parse(tokens).into_result()
+    // match schema_parser().parse(tokens).into_result() {
+    //     Ok(schema) => println!("{:?}", schema),
+    //     Err(errs) => {
+    //         for err in errs {
+    //             Report::build(ReportKind::Error, ((), err.span().into_range()))
+    //                 .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
+    //                 .with_code(3)
+    //                 .with_message(err.to_string())
+    //                 .with_label(
+    //                     Label::new(((), err.span().into_range()))
+    //                         .with_message(err.reason().to_string())
+    //                         .with_color(Color::Red),
+    //                 )
+    //                 .finish()
+    //                 .eprint(Source::from(src))
+    //                 .unwrap();
+    //         }
+    //     }
+    // }
 }
 
 #[test]
@@ -203,7 +202,10 @@ fn test_simple_table() {
             id: string
         }
     ";
-    parse(schema)
+    match parse(schema) {
+        Ok(schema) => assert!(schema.tables.len() > 0),
+        Err(_) => panic!("test failed"),
+    }
 }
 
 #[test]
@@ -213,15 +215,39 @@ fn test_abstract_table() {
             id: string
         }
     ";
-    parse(schema)
+    match parse(schema) {
+        Ok(schema) => assert!(schema.tables.len() > 0),
+        Err(_) => panic!("test failed"),
+    }
 }
 
 #[test]
 fn test_abstract_table_extends() {
-    let program: &str = r"
+    let schema: &str = r"
         abstract table foo extends bar {
             id: string
         }
     ";
-    parse(program)
+    match parse(schema) {
+        Ok(schema) => assert!(schema.tables.len() > 0),
+        Err(_) => panic!("test failed"),
+    }
+}
+
+#[test]
+fn test_multiple_table() {
+    let schema: &str = r"
+        abstract table bar {
+            created_at: timestamp,
+            updated_at: timestamp
+        }
+
+        table foo extends bar {
+            id: string primary
+        }
+    ";
+    match parse(schema) {
+        Ok(schema) => assert!(schema.tables.len() > 0),
+        Err(_) => panic!("test failed"),
+    }
 }
