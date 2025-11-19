@@ -75,6 +75,9 @@ impl Schema {
         Ok(())
     }
 
+    /// Check inheritance correctness of [`TableDef`] including
+    ///
+    /// `non_existed_referenced_table`, `non_abstract_referenced_table`, `cyclic_references`
     fn validate_inheritance<'a>(
         &self,
         table_map: &HashMap<&str, &TableDef>,
@@ -112,7 +115,7 @@ impl Schema {
         Ok(())
     }
 
-    // collect_tables also check for duplicated table declaration
+    /// Return a `HashMap<table_name, table>` and also check for [`TableDef`] redeclaration
     fn collect_tables(
         &'_ self,
     ) -> Result<HashMap<&'_ str, &'_ TableDef>, Vec<Rich<'_, Token<'_>, SimpleSpan>>> {
