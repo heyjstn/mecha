@@ -1,10 +1,9 @@
 use crate::lexer::Token;
 use crate::parser::parse;
 use ariadne::{Color, Label, Report, ReportKind, Source};
-use chumsky::container::Seq;
 use chumsky::error::Rich;
 use chumsky::span::{SimpleSpan, Span};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub enum RefOperator {
@@ -66,90 +65,79 @@ pub struct Ident {
     pub span: SimpleSpan,
 }
 
-fn check(schema: &'_ Schema) -> Result<&'_ Schema, Vec<Rich<'_, Token<'_>>>> {
-    let table_by_name_res = collect_tables(&schema);
-    if table_by_name_res.is_err() {
-        return Err(table_by_name_res.err().unwrap());
+impl Schema {
+    pub fn validate<'a>(&'a self) -> Result<(), Vec<Rich<'a, Token<'a>>>> {
+        let table_map = self.collect_tables()?;
+
+        self.validate_inheritance(&table_map)?;
+
+        Ok(())
     }
 
-    let table_by_name = table_by_name_res?;
-    let extend_non_exsitent_table = check_extend_non_existent_table(&table_by_name);
-    if extend_non_exsitent_table.is_err() {
-        return Err(extend_non_exsitent_table.err().unwrap());
-    }
+    fn validate_inheritance<'a>(
+        &self,
+        table_map: &HashMap<&str, &TableDef>,
+    ) -> Result<(), Vec<Rich<'a, Token<'a>, SimpleSpan>>> {
+        for (_, table) in table_map {
+            if let Some(parent_ident) = table.extended_by.as_ref() {
+                let parent_name = parent_ident.name.as_str();
 
-    Ok(schema)
-}
-
-fn check_extend_non_existent_table<'a>(
-    table_by_name: &HashMap<&str, &TableDef>,
-) -> Result<String, Vec<Rich<'a, Token<'a>, SimpleSpan>>> {
-    let mut set: HashSet<&str> = HashSet::new();
-    for (_, (table_name, table)) in table_by_name.iter().enumerate() {
-        if table.is_abstract {
-            set.insert(table_name);
+                match table_map.get(parent_name) {
+                    Some(parent_table) => {
+                        // errors referenced [`Table`] is existed but not abstract
+                        if !parent_table.is_abstract {
+                            let errs = vec![
+                                Rich::custom(
+                                    table.span,
+                                    format!("table {} is referenced here", parent_name),
+                                ),
+                                Rich::custom(parent_table.span, "but it's not abstract"),
+                            ];
+                            return Err(errs);
+                        }
+                    }
+                    None => {
+                        // errors referenced [`Table`] is not existed
+                        let errs = vec![Rich::custom(
+                            parent_ident.span,
+                            format!("table {} is not existed", parent_name),
+                        )];
+                        return Err(errs);
+                    }
+                }
+            }
         }
+
+        Ok(())
     }
 
-    for (_, (_, v)) in table_by_name.iter().enumerate() {
-        let parent_table_ident = v.extended_by.as_ref();
-        if parent_table_ident.is_none() {
-            continue;
-        }
-        let extended_table_name = parent_table_ident.unwrap().name.clone(); // todo: wtf refactor this later try to avoid clone
+    // collect_tables also check for duplicated table declaration
+    fn collect_tables(
+        &'_ self,
+    ) -> Result<HashMap<&'_ str, &'_ TableDef>, Vec<Rich<'_, Token<'_>, SimpleSpan>>> {
+        let mut map: HashMap<&str, &TableDef> = HashMap::new();
 
-        if !extended_table_name.is_empty() && !set.contains(&*extended_table_name) {
-            // errors propagate the parent [Table] is not abstract
-            if table_by_name.contains_key(&*extended_table_name) {
-                let parent_table = table_by_name.get(&*extended_table_name);
+        for table in &self.tables {
+            let table_name = table.id.name.as_str();
 
+            if let Some(prev_table) = map.get(table_name) {
+                // errors [`Table`] is redeclared
                 let errs = vec![
                     Rich::custom(
-                        parent_table_ident.unwrap().span,
-                        format!("table {} is referenced here", extended_table_name),
+                        prev_table.id.span,
+                        format!("table {} is declared here", prev_table.id.name),
                     ),
-                    Rich::custom(parent_table.unwrap().span, "but it's not abstract"),
+                    Rich::custom(table.id.span, "but redeclared here"),
                 ];
                 return Err(errs);
             }
 
-            // errors propagate the parent [Table] is not defined
-            let errs = vec![Rich::custom(
-                parent_table_ident.unwrap().span,
-                format!("table {} is not defined", extended_table_name),
-            )];
-            return Err(errs);
+            map.insert(&table.id.name, table);
         }
+        Ok(map)
     }
-
-    Ok(String::default())
 }
 
-// collect_tables also check for duplicated table declaration
-fn collect_tables(
-    schema: &Schema,
-) -> Result<HashMap<&str, &TableDef>, Vec<Rich<'_, Token<'_>, SimpleSpan>>> {
-    let mut map: HashMap<&str, &TableDef> = HashMap::new();
-    for (_, table) in schema.tables.iter().enumerate() {
-        let table_name_ref = &(*table.id.name);
-
-        // errors propagate in case [Table] is redeclared
-        if map.contains_key(table_name_ref) {
-            let prev_table = map.get(table_name_ref).unwrap();
-            let errs = vec![
-                Rich::custom(
-                    prev_table.id.span,
-                    format!("table {} is declared here", prev_table.id.name),
-                ),
-                Rich::custom(table.id.span, "but redeclared here"),
-            ];
-            return Err(errs);
-        }
-
-        map.insert(&table.id.name, table);
-    }
-    Ok(map)
-}
 
 #[test]
 fn test_duplicated_tables() {
@@ -162,8 +150,7 @@ fn test_duplicated_tables() {
             name: uuid4
         }
     ";
-    let schema = parse(src).unwrap();
-    match check(&schema) {
+    match parse(src).unwrap().validate() {
         Ok(_) => println!("ok"),
         Err(errs) => {
             for err in errs {
@@ -191,8 +178,7 @@ fn test_extend_non_existed_table() {
             name: uuid4
         }
     ";
-    let schema = parse(src).unwrap();
-    match check(&schema) {
+    match parse(src).unwrap().validate() {
         Ok(_) => println!("ok"),
         Err(errs) => {
             for err in errs {
@@ -224,8 +210,7 @@ fn test_extend_non_abstract_table() {
             name: uuid4
         }
     ";
-    let schema = parse(src).unwrap();
-    match check(&schema) {
+    match parse(src).unwrap().validate() {
         Ok(_) => println!("ok"),
         Err(errs) => {
             for err in errs {
