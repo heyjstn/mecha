@@ -5,6 +5,8 @@ use chumsky::error::Rich;
 use chumsky::span::{SimpleSpan, Span};
 use std::collections::HashMap;
 
+pub type Spanned<T> = (T, SimpleSpan);
+
 #[derive(Debug, Clone)]
 pub enum RefOperator {
     OneToMany,
@@ -14,8 +16,8 @@ pub enum RefOperator {
 
 #[derive(Debug)]
 pub enum Index {
-    Single(String),
-    Composite(Vec<String>),
+    Single(Ident, SimpleSpan),
+    Composite(Vec<Ident>, SimpleSpan),
 }
 
 #[derive(Debug, Clone)]
@@ -25,30 +27,27 @@ pub enum ColumnAttribute {
 }
 
 #[derive(Debug)]
-pub struct Metadata<'a> {
-    pub _src: String,
-    pub _tokens: Vec<Rich<'a, Token<'a>>>,
-}
-
-#[derive(Debug)]
 pub struct Schema {
     pub tables: Vec<TableDef>,
+    pub span: SimpleSpan,
 }
 
 #[derive(Debug, Clone)]
 pub struct TableDef {
-    pub name: String,
+    pub id: Ident,
     pub is_abstract: bool,
-    pub extended_by: Option<String>,
+    pub extended_by: Option<Ident>,
     pub columns: Vec<ColumnDef>,
+    pub span: SimpleSpan,
 }
 
 #[derive(Debug, Clone)]
 pub struct ColumnDef {
-    pub name: String,
-    pub typ: String,
+    pub id: Ident,
+    pub typ: Ident,
     pub attribute: Option<ColumnAttribute>,
     pub reference: Option<ReferenceDef>,
+    pub span: SimpleSpan,
 }
 
 #[derive(Debug, Clone)]
@@ -57,8 +56,15 @@ pub struct IndexDef {}
 #[derive(Debug, Clone)]
 pub struct ReferenceDef {
     pub operator: RefOperator,
-    pub table: String,
-    pub column: String,
+    pub table: Ident,
+    pub column: Ident,
+    pub span: SimpleSpan,
+}
+
+#[derive(Debug, Clone)]
+pub struct Ident {
+    pub name: String,
+    pub span: SimpleSpan,
 }
 
 fn check(schema: &'_ Schema) -> Result<&'_ Schema, Vec<Rich<'_, Token<'_>>>> {
@@ -76,11 +82,22 @@ fn collect_tables(
 ) -> Result<HashMap<&str, &TableDef>, Vec<Rich<'_, Token<'_>, SimpleSpan>>> {
     let mut map: HashMap<&str, &TableDef> = HashMap::new();
     for (_, table) in schema.tables.iter().enumerate() {
-        if map.contains_key(&(*table.name)) {
-            let span = Rich::custom(SimpleSpan::default(), "duplicated table");
-            return Err(vec![span]);
+        let table_name_ref = &(*table.id.name);
+
+        // errors propagate in case [Table] is redeclared
+        if map.contains_key(table_name_ref) {
+            let prev_table = map.get(table_name_ref).unwrap();
+            let errs = vec![
+                Rich::custom(
+                    prev_table.id.span,
+                    format!("table {} is declared here", prev_table.id.name),
+                ),
+                Rich::custom(table.id.span, "but redeclared here"),
+            ];
+            return Err(errs);
         }
-        map.insert(&table.name, table);
+
+        map.insert(&table.id.name, table);
     }
     Ok(map)
 }
@@ -92,7 +109,7 @@ fn test_duplicated_tables() {
             id: string
         }
 
-        table foo {
+        table foo extends bar {
             name: uuid4
         }
     ";

@@ -1,4 +1,6 @@
-use crate::ast::{ColumnAttribute, ColumnDef, Index, RefOperator, ReferenceDef, Schema, TableDef};
+use crate::ast::{
+    ColumnAttribute, ColumnDef, Ident, Index, RefOperator, ReferenceDef, Schema, TableDef,
+};
 use crate::lexer;
 use crate::lexer::Token;
 use ariadne::{Color, Label, Report, ReportKind, Source};
@@ -17,7 +19,10 @@ where
         .at_least(1)
         .collect::<Vec<_>>()
         .then_ignore(end())
-        .map(|table| Schema { tables: table })
+        .map_with(|table, extra| Schema {
+            tables: table,
+            span: extra.span(),
+        })
 }
 
 fn table_parser<'tokens, 'src: 'tokens, I>()
@@ -43,12 +48,13 @@ where
         .then(column_list_parser())
         .then(index_section_parser().or_not())
         .then_ignore(select! { Token::RightBrace => () })
-        .map(
-            |((((is_abstract, name), extends), columns), _indexes_opt)| TableDef {
-                name,
+        .map_with(
+            |((((is_abstract, ident), extends), columns), _indexes_opt), extra| TableDef {
+                id: ident,
                 is_abstract,
                 columns,
                 extended_by: extends,
+                span: extra.span(),
             },
         )
 }
@@ -63,11 +69,12 @@ where
         .then(ident_string())
         .then(column_attribute_parser().or_not())
         .then(reference_parser().or_not())
-        .map(|(((name, typ), attr_opt), ref_opt)| ColumnDef {
-            name,
+        .map_with(|(((id, typ), attr_opt), ref_opt), extra| ColumnDef {
+            id,
             typ,
             attribute: attr_opt,
             reference: ref_opt,
+            span: extra.span(),
         })
 }
 
@@ -79,7 +86,8 @@ where
     select! {
         Token::Primary => ColumnAttribute::Primary,
         Token::Unique  => ColumnAttribute::Unique,
-    }.labelled("'primary' or 'unique'")
+    }
+    .labelled("'primary' or 'unique'")
 }
 
 fn column_list_parser<'tokens, 'src: 'tokens, I>()
@@ -94,7 +102,7 @@ where
 }
 
 fn ident_string<'tokens, 'src: 'tokens, I>()
--> impl Parser<'tokens, I, String, extra::Err<Rich<'tokens, Token<'src>>>>
+-> impl Parser<'tokens, I, Ident, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
@@ -102,6 +110,10 @@ where
         Token::Id(name) => name.to_string(),
     }
     .labelled("id")
+    .map_with(|name, extra| Ident {
+        name,
+        span: extra.span(),
+    })
 }
 
 fn ref_operator_parser<'tokens, 'src: 'tokens, I>()
@@ -130,11 +142,13 @@ where
         .then_ignore(select! { Token::Dot => () }.labelled("'.'"))
         .then(ident_string())
         .then_ignore(select! { Token::RightParen => () }.labelled("')'"))
-        .map(|((operator, table), column)| ReferenceDef {
+        .map_with(|((operator, table), column), extra| ReferenceDef {
             operator,
             table,
             column,
+            span: extra.span(),
         })
+        .labelled("reference expression")
 }
 
 fn composite_index_parser<'tokens, 'src: 'tokens, I>()
@@ -142,7 +156,8 @@ fn composite_index_parser<'tokens, 'src: 'tokens, I>()
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
-    select! { Token::LeftParen => () }.labelled("'('")
+    select! { Token::LeftParen => () }
+        .labelled("'('")
         .ignore_then(
             ident_string()
                 .separated_by(select! { Token::Comma => () }.labelled("','"))
@@ -150,7 +165,8 @@ where
                 .collect::<Vec<_>>(),
         )
         .then_ignore(select! { Token::RightParen => () }.labelled("')'"))
-        .map(Index::Composite)
+        .map_with(|ids, extra| Index::Composite(ids, extra.span()))
+        .labelled("multiple indexes")
 }
 
 fn index_item_parser<'tokens, 'src: 'tokens, I>()
@@ -158,7 +174,9 @@ fn index_item_parser<'tokens, 'src: 'tokens, I>()
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
-    composite_index_parser().or(ident_string().map(Index::Single))
+    composite_index_parser().or(ident_string()
+        .map_with(|id, extra| Index::Single(id, extra.span()))
+        .labelled("single index"))
 }
 
 fn index_section_parser<'tokens, 'src: 'tokens, I>()
@@ -167,18 +185,19 @@ where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
     select! { Token::Indexes => () }
-        .ignore_then(select! { Token::LeftBrace => () })
+        .labelled("'indexes'")
+        .ignore_then(select! { Token::LeftBrace => () }.labelled("'{'"))
         .ignore_then(
             index_item_parser()
-                .separated_by(select! { Token::Comma => () })
+                .separated_by(select! { Token::Comma => () }.labelled("','"))
                 .at_least(1)
                 .collect::<Vec<_>>(),
         )
-        .then_ignore(select! { Token::RightBrace => () })
+        .then_ignore(select! { Token::RightBrace => () }.labelled("'}'"))
 }
 
 pub fn parse(src: &'_ str) -> Result<Schema, Vec<Rich<'_, Token<'_>>>> {
-    let tokens = lexer::tokenize(src);
+    let tokens = lexer::lex(src);
     schema_parser().parse(tokens).into_result()
     // match schema_parser().parse(tokens).into_result() {
     //     Ok(schema) => println!("{:?}", schema),
