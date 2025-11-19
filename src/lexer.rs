@@ -4,6 +4,7 @@ use chumsky::input::{Input, Stream, ValueInput};
 use chumsky::prelude::SimpleSpan;
 
 #[derive(Logos, Clone, PartialEq)]
+#[derive(Debug)]
 pub enum Token<'a> {
     Err,
 
@@ -83,7 +84,7 @@ impl<'a> Display for Token<'a> {
     }
 }
 
-pub fn tokenize(src: &'_ str) -> impl ValueInput<'_, Token=Token<'_>, Span=SimpleSpan> {
+pub fn lex(src: &'_ str) -> impl ValueInput<'_, Token=Token<'_>, Span=SimpleSpan> {
     let token_iter = Token::lexer(src).spanned().map(|(tok, span)| match tok {
         Ok(tok) => {
             let simple_span: SimpleSpan = span.into();
