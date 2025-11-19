@@ -1,11 +1,10 @@
 use crate::lexer::Token;
 use crate::parser::parse;
 use ariadne::{Color, Label, Report, ReportKind, Source};
+use chumsky::container::Seq;
 use chumsky::error::Rich;
 use chumsky::span::{SimpleSpan, Span};
-use std::collections::HashMap;
-
-pub type Spanned<T> = (T, SimpleSpan);
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
 pub enum RefOperator {
@@ -68,12 +67,62 @@ pub struct Ident {
 }
 
 fn check(schema: &'_ Schema) -> Result<&'_ Schema, Vec<Rich<'_, Token<'_>>>> {
-    let tables_by_name = collect_tables(&schema);
-    if tables_by_name.is_err() {
-        return Err(tables_by_name.err().unwrap());
+    let table_by_name_res = collect_tables(&schema);
+    if table_by_name_res.is_err() {
+        return Err(table_by_name_res.err().unwrap());
+    }
+
+    let table_by_name = table_by_name_res?;
+    let extend_non_exsitent_table = check_extend_non_existent_table(&table_by_name);
+    if extend_non_exsitent_table.is_err() {
+        return Err(extend_non_exsitent_table.err().unwrap());
     }
 
     Ok(schema)
+}
+
+fn check_extend_non_existent_table<'a>(
+    table_by_name: &HashMap<&str, &TableDef>,
+) -> Result<String, Vec<Rich<'a, Token<'a>, SimpleSpan>>> {
+    let mut set: HashSet<&str> = HashSet::new();
+    for (_, (table_name, table)) in table_by_name.iter().enumerate() {
+        if table.is_abstract {
+            set.insert(table_name);
+        }
+    }
+
+    for (_, (_, v)) in table_by_name.iter().enumerate() {
+        let parent_table_ident = v.extended_by.as_ref();
+        if parent_table_ident.is_none() {
+            continue;
+        }
+        let extended_table_name = parent_table_ident.unwrap().name.clone(); // todo: wtf refactor this later try to avoid clone
+
+        if !extended_table_name.is_empty() && !set.contains(&*extended_table_name) {
+            // errors propagate the parent [Table] is not abstract
+            if table_by_name.contains_key(&*extended_table_name) {
+                let parent_table = table_by_name.get(&*extended_table_name);
+
+                let errs = vec![
+                    Rich::custom(
+                        parent_table_ident.unwrap().span,
+                        format!("table {} is referenced here", extended_table_name),
+                    ),
+                    Rich::custom(parent_table.unwrap().span, "but it's not abstract"),
+                ];
+                return Err(errs);
+            }
+
+            // errors propagate the parent [Table] is not defined
+            let errs = vec![Rich::custom(
+                parent_table_ident.unwrap().span,
+                format!("table {} is not defined", extended_table_name),
+            )];
+            return Err(errs);
+        }
+    }
+
+    Ok(String::default())
 }
 
 // collect_tables also check for duplicated table declaration
@@ -106,6 +155,68 @@ fn collect_tables(
 fn test_duplicated_tables() {
     let src = r"
         table foo {
+            id: string
+        }
+
+        table foo extends bar {
+            name: uuid4
+        }
+    ";
+    let schema = parse(src).unwrap();
+    match check(&schema) {
+        Ok(_) => println!("ok"),
+        Err(errs) => {
+            for err in errs {
+                Report::build(ReportKind::Error, ((), err.span().into_range()))
+                    .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
+                    .with_code(10)
+                    .with_message(err.to_string())
+                    .with_label(
+                        Label::new(((), err.span().into_range()))
+                            .with_message(err.reason().to_string())
+                            .with_color(Color::Red),
+                    )
+                    .finish()
+                    .eprint(Source::from(src))
+                    .unwrap();
+            }
+        }
+    }
+}
+
+#[test]
+fn test_extend_non_existed_table() {
+    let src = r"
+        table foo extends bar {
+            name: uuid4
+        }
+    ";
+    let schema = parse(src).unwrap();
+    match check(&schema) {
+        Ok(_) => println!("ok"),
+        Err(errs) => {
+            for err in errs {
+                Report::build(ReportKind::Error, ((), err.span().into_range()))
+                    .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
+                    .with_code(10)
+                    .with_message(err.to_string())
+                    .with_label(
+                        Label::new(((), err.span().into_range()))
+                            .with_message(err.reason().to_string())
+                            .with_color(Color::Red),
+                    )
+                    .finish()
+                    .eprint(Source::from(src))
+                    .unwrap();
+            }
+        }
+    }
+}
+
+#[test]
+fn test_extend_non_abstract_table() {
+    let src = r"
+        table bar {
             id: string
         }
 
