@@ -26,6 +26,7 @@ pub enum ColumnAttribute {
 
 #[derive(Debug)]
 pub struct Schema {
+    pub name: String,
     pub tables: Vec<TableDef>,
     pub span: SimpleSpan,
 }
@@ -138,95 +139,79 @@ impl Schema {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[test]
-fn test_duplicated_tables() {
-    let src = r"
-        table foo {
-            id: string
-        }
-
-        table foo extends bar {
-            name: uuid4
-        }
-    ";
-    match parse(src).unwrap().validate() {
-        Ok(_) => println!("ok"),
-        Err(errs) => {
-            for err in errs {
-                Report::build(ReportKind::Error, ((), err.span().into_range()))
-                    .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
-                    .with_code(10)
-                    .with_message(err.to_string())
-                    .with_label(
-                        Label::new(((), err.span().into_range()))
-                            .with_message(err.reason().to_string())
-                            .with_color(Color::Red),
-                    )
-                    .finish()
-                    .eprint(Source::from(src))
-                    .unwrap();
-            }
+    fn assert_valid(src: &str) {
+        let schema = parse(src).unwrap();
+        if let Err(errs) = schema.validate() {
+            print_report(src, errs);
+            panic!("schema validation failed unexpectedly");
         }
     }
-}
 
-#[test]
-fn test_extend_non_existed_table() {
-    let src = r"
-        table foo extends bar {
-            name: uuid4
-        }
-    ";
-    match parse(src).unwrap().validate() {
-        Ok(_) => println!("ok"),
-        Err(errs) => {
-            for err in errs {
-                Report::build(ReportKind::Error, ((), err.span().into_range()))
-                    .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
-                    .with_code(10)
-                    .with_message(err.to_string())
-                    .with_label(
-                        Label::new(((), err.span().into_range()))
-                            .with_message(err.reason().to_string())
-                            .with_color(Color::Red),
-                    )
-                    .finish()
-                    .eprint(Source::from(src))
-                    .unwrap();
-            }
+    fn assert_invalid(src: &str) {
+        let schema = parse(src).unwrap();
+        if let Err(errs) = schema.validate() {
+            print_report(src, errs);
+        } else {
+            panic!("schema validation succeeded but should have failed");
         }
     }
-}
 
-#[test]
-fn test_extend_non_abstract_table() {
-    let src = r"
-        table bar {
-            id: string
+    // todo: migrate this to an error diagnosis mod
+    fn print_report(src: &str, errs: Vec<Rich<Token, SimpleSpan>>) {
+        for err in errs {
+            Report::build(ReportKind::Error, ("main.mecha", err.span().into_range())) // todo: pass filename into this instead of hardcode
+                .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
+                .with_message(err.to_string())
+                .with_label(
+                    Label::new(("main.mecha", err.span().into_range()))
+                        .with_message(err.reason().to_string())
+                        .with_color(Color::Red),
+                )
+                .finish()
+                .print(("main.mecha", Source::from(src)))
+                .unwrap();
         }
+    }
 
-        table foo extends bar {
-            name: uuid4
-        }
-    ";
-    match parse(src).unwrap().validate() {
-        Ok(_) => println!("ok"),
-        Err(errs) => {
-            for err in errs {
-                Report::build(ReportKind::Error, ((), err.span().into_range()))
-                    .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
-                    .with_code(10)
-                    .with_message(err.to_string())
-                    .with_label(
-                        Label::new(((), err.span().into_range()))
-                            .with_message(err.reason().to_string())
-                            .with_color(Color::Red),
-                    )
-                    .finish()
-                    .eprint(Source::from(src))
-                    .unwrap();
+    #[test]
+    fn test_duplicated_tables() {
+        let src = r"
+            table foo {
+                id: string
             }
-        }
+
+            table foo extends bar {
+                name: uuid4
+            }
+        ";
+        assert_invalid(src);
+    }
+
+    #[test]
+    fn test_extend_non_existed_table() {
+        let src = r"
+            table foo extends bar {
+                name: uuid4
+            }
+        ";
+        assert_invalid(src);
+    }
+
+    #[test]
+    fn test_extend_non_abstract_table() {
+        let src = r"
+            table bar {
+                id: string
+            }
+
+            table foo extends bar {
+                name: uuid4
+            }
+        ";
+        assert_invalid(src);
     }
 }

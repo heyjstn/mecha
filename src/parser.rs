@@ -20,6 +20,7 @@ where
         .collect::<Vec<_>>()
         .then_ignore(end())
         .map_with(|table, extra| Schema {
+            name: "main.mecha".to_string(),
             tables: table,
             span: extra.span(),
         })
