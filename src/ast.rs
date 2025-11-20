@@ -1,9 +1,10 @@
 use crate::lexer::Token;
 use crate::parser::parse;
 use ariadne::{Color, Label, Report, ReportKind, Source};
+use chumsky::container::{Container, Seq};
 use chumsky::error::Rich;
 use chumsky::span::{SimpleSpan, Span};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
 pub enum RefOperator {
@@ -66,19 +67,91 @@ pub struct Ident {
     pub span: SimpleSpan,
 }
 
+pub enum SemanticErr {
+    NonExistentParent,
+    NonAbstractParent,
+    CyclicRef,
+}
+
+impl SemanticErr {
+    pub fn value(&self) -> (i32, &'_ str) {
+        match self {
+            SemanticErr::NonExistentParent => (11, "extends non-existent parent table"),
+            SemanticErr::NonAbstractParent => (12, "extends non-abstract parent table"),
+            SemanticErr::CyclicRef => (13, "cyclic reference detected"),
+            _ => (10, "undefined errors"),
+        }
+    }
+}
+
 impl Schema {
-    pub fn validate<'a>(&'a self) -> Result<(), Vec<Rich<'a, Token<'a>>>> {
+    pub fn check<'a>(&'a self) -> Result<(), Vec<Rich<'a, Token<'a>>>> {
         let table_map = self.collect_tables()?;
 
-        self.validate_inheritance(&table_map)?;
+        //
+        self.check_references(&table_map)?;
+
+        self.check_cyclic_references(&table_map)?;
 
         Ok(())
     }
 
-    /// Check inheritance correctness of [`TableDef`] including
-    ///
-    /// `non_existed_referenced_table`, `non_abstract_referenced_table`, `cyclic_references`
-    fn validate_inheritance<'a>(
+    /// Check for [`SemanticErr::CyclicRef`]
+    fn check_cyclic_references<'a>(
+        &self,
+        table_map: &HashMap<&str, &TableDef>,
+    ) -> Result<(), Vec<Rich<'a, Token<'a>, SimpleSpan>>> {
+        // dfs to check cyclic component
+        let mut fine: HashSet<&str> = HashSet::new();
+
+        for (table_name, table) in table_map {
+            if fine.contains(table_name) {
+                continue;
+            }
+
+            let mut visited: HashSet<&str> = HashSet::new();
+            let mut stack: Vec<&TableDef> = Vec::new();
+            stack.push(table);
+
+            while !stack.is_empty() {
+                if let Some(cur_table) = stack.pop() {
+                    visited.push(&cur_table.id.name.as_str());
+                    match cur_table.extended_by.as_ref() {
+                        Some(next_table_ident) => {
+                            if fine.contains(next_table_ident.name.as_str()) {
+                                // this path is fine as this parent is not a part of any cyclic component
+                                continue;
+                            }
+
+                            let next_table_name = next_table_ident.name.as_str();
+
+                            let next_table = table_map.get(next_table_name).unwrap(); // unwrap is fine because all referenced table is existed
+
+                            if visited.contains(next_table_name) {
+                                // oops, this table has been visited
+                                let errs = vec![Rich::custom(
+                                    next_table.span,
+                                    format!("cyclic reference happens at {next_table_name}",), // todo: return clearer err span which including the starting table and end table
+                                )];
+                                return Err(errs);
+                            }
+
+                            stack.push(next_table);
+                        }
+                        None => continue,
+                    }
+                }
+            }
+
+            // if reach this, all visited tables are fine
+            fine.extend(visited);
+        }
+
+        Ok(())
+    }
+
+    /// Check for [`SemanticErr::NonAbstractParent`], [`SemanticErr::NonExistentParent`]
+    fn check_references<'a>(
         &self,
         table_map: &HashMap<&str, &TableDef>,
     ) -> Result<(), Vec<Rich<'a, Token<'a>, SimpleSpan>>> {
@@ -148,7 +221,7 @@ mod tests {
 
     fn assert_valid(src: &str) {
         let schema = parse(src).unwrap();
-        if let Err(errs) = schema.validate() {
+        if let Err(errs) = schema.check() {
             print_report(src, errs);
             panic!("schema validation failed unexpectedly");
         }
@@ -156,7 +229,7 @@ mod tests {
 
     fn assert_invalid(src: &str) {
         let schema = parse(src).unwrap();
-        if let Err(errs) = schema.validate() {
+        if let Err(errs) = schema.check() {
             print_report(src, errs);
         } else {
             panic!("schema validation succeeded but should have failed");
@@ -212,6 +285,34 @@ mod tests {
             }
 
             table foo extends bar {
+                name: uuid4
+            }
+        ";
+        assert_invalid(src);
+    }
+
+    #[test]
+    fn test_normal_ref_tables() {
+        let src = r"
+            abstract table bar {
+                id: string
+            }
+
+            table foo extends bar {
+                name: uuid4
+            }
+        ";
+        assert_valid(src);
+    }
+
+    #[test]
+    fn test_cyclic_ref_tables() {
+        let src = r"
+            abstract table bar extends foo {
+                id: string
+            }
+
+            abstract table foo extends bar {
                 name: uuid4
             }
         ";
