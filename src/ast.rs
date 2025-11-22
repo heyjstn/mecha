@@ -68,30 +68,49 @@ pub struct Ident {
 }
 
 pub enum SemanticErr {
+    TableRedeclaration,
     NonExistentParent,
     NonAbstractParent,
     CyclicRef,
+    ColumnRedeclaration,
 }
 
-impl SemanticErr {
-    pub fn value(&self) -> (i32, &'_ str) {
-        match self {
-            SemanticErr::NonExistentParent => (11, "extends non-existent parent table"),
-            SemanticErr::NonAbstractParent => (12, "extends non-abstract parent table"),
-            SemanticErr::CyclicRef => (13, "cyclic reference detected"),
-            _ => (10, "undefined errors"),
-        }
-    }
-}
+type CheckResult<'a, T> = Result<T, Vec<Rich<'a, Token<'a>, SimpleSpan>>>;
 
 impl Schema {
-    pub fn check<'a>(&'a self) -> Result<(), Vec<Rich<'a, Token<'a>>>> {
+    pub fn check(&'_ self) -> CheckResult<'_, ()> {
         let table_map = self.collect_tables()?;
 
-        //
         self.check_references(&table_map)?;
 
         self.check_cyclic_references(&table_map)?;
+
+        self.populate_concrete_tables(&table_map)?;
+
+        Ok(())
+    }
+
+    /// Populate the concrete tables with parent columns, also check for [`SemanticErr::ColumnRedeclaration`]
+    fn populate_concrete_tables(
+        &self,
+        table_map: &HashMap<&str, &TableDef>,
+    ) -> CheckResult<'_, ()> {
+        // todo: enhance this later to avoid duplication visits
+        for (table_name, table) in table_map {
+            match table.extended_by.as_ref() {
+                Some(parent_table_ident) => {
+                    let parent_table_name = parent_table_ident.name.as_str();
+                    let mut parent_table = table_map.get(parent_table_name).unwrap();
+
+                    if parent_table.is_abstract {
+                        continue;
+                    }
+
+                    // todo: continue implementation
+                }
+                None => continue,
+            }
+        }
 
         Ok(())
     }
@@ -100,12 +119,16 @@ impl Schema {
     fn check_cyclic_references<'a>(
         &self,
         table_map: &HashMap<&str, &TableDef>,
-    ) -> Result<(), Vec<Rich<'a, Token<'a>, SimpleSpan>>> {
-        // dfs to check cyclic component
-        let mut fine: HashSet<&str> = HashSet::new();
+    ) -> CheckResult<'_, ()> {
+        let mut checked: HashSet<&str> = HashSet::new();
 
-        for (table_name, table) in table_map {
-            if fine.contains(table_name) {
+        let mut sorted_tables: Vec<&TableDef> = table_map.values().copied().collect();
+        sorted_tables.sort_by_key(|t| t.id.name.as_str());
+
+        for table in sorted_tables {
+            let start_name = table.id.name.as_str();
+
+            if checked.contains(start_name) {
                 continue;
             }
 
@@ -118,7 +141,7 @@ impl Schema {
                     visited.push(&cur_table.id.name.as_str());
                     match cur_table.extended_by.as_ref() {
                         Some(next_table_ident) => {
-                            if fine.contains(next_table_ident.name.as_str()) {
+                            if checked.contains(next_table_ident.name.as_str()) {
                                 // this path is fine as this parent is not a part of any cyclic component
                                 continue;
                             }
@@ -144,17 +167,14 @@ impl Schema {
             }
 
             // if reach this, all visited tables are fine
-            fine.extend(visited);
+            checked.extend(visited);
         }
 
         Ok(())
     }
 
     /// Check for [`SemanticErr::NonAbstractParent`], [`SemanticErr::NonExistentParent`]
-    fn check_references<'a>(
-        &self,
-        table_map: &HashMap<&str, &TableDef>,
-    ) -> Result<(), Vec<Rich<'a, Token<'a>, SimpleSpan>>> {
+    fn check_references<'a>(&self, table_map: &HashMap<&str, &TableDef>) -> CheckResult<'_, ()> {
         for (_, table) in table_map {
             if let Some(parent_ident) = table.extended_by.as_ref() {
                 let parent_name = parent_ident.name.as_str();
@@ -188,10 +208,8 @@ impl Schema {
         Ok(())
     }
 
-    /// Return a `HashMap<table_name, table>` and also check for [`TableDef`] redeclaration
-    fn collect_tables(
-        &'_ self,
-    ) -> Result<HashMap<&'_ str, &'_ TableDef>, Vec<Rich<'_, Token<'_>, SimpleSpan>>> {
+    /// Return a [`HashMap`] and also check for [`SemanticErr::TableRedeclaration`]
+    fn collect_tables(&'_ self) -> CheckResult<'_, HashMap<&'_ str, &'_ TableDef>> {
         let mut map: HashMap<&str, &TableDef> = HashMap::new();
 
         for table in &self.tables {
@@ -313,6 +331,24 @@ mod tests {
             }
 
             abstract table foo extends bar {
+                name: uuid4
+            }
+        ";
+        assert_invalid(src);
+    }
+
+    #[test]
+    fn test_cyclic_ref_tables_2() {
+        let src = r"
+            abstract table bar extends foo {
+                id: string
+            }
+
+            abstract table hey extends bar {
+                time: timestampz
+            }
+
+            abstract table foo extends hey {
                 name: uuid4
             }
         ";
