@@ -4,66 +4,77 @@ use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::container::{Container, Seq};
 use chumsky::error::Rich;
 use chumsky::span::{SimpleSpan, Span};
+use serde::{Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum RefOperator {
     OneToMany,
     OneToOne,
     ManyToMany,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub enum Index {
     Single(Ident, SimpleSpan),
     Composite(Vec<Ident>, SimpleSpan),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum ColumnAttribute {
     Primary,
     Unique,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct Schema {
     pub name: String,
     pub tables: Vec<TableDef>,
+
+    #[serde(skip)]
     pub span: SimpleSpan,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct TableDef {
     pub id: Ident,
     pub is_abstract: bool,
     pub extended_by: Option<Ident>,
     pub columns: Vec<ColumnDef>,
+
+    #[serde(skip)]
     pub span: SimpleSpan,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ColumnDef {
     pub id: Ident,
     pub typ: Ident,
     pub attribute: Option<ColumnAttribute>,
     pub reference: Option<ReferenceDef>,
+
+    #[serde(skip)]
     pub span: SimpleSpan,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct IndexDef {}
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ReferenceDef {
     pub operator: RefOperator,
     pub table: Ident,
     pub column: Ident,
+
+    #[serde(skip)]
     pub span: SimpleSpan,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Ident {
     pub name: String,
+
+    #[serde(skip)]
     pub span: SimpleSpan,
 }
 
@@ -78,37 +89,110 @@ pub enum SemanticErr {
 type CheckResult<'a, T> = Result<T, Vec<Rich<'a, Token<'a>, SimpleSpan>>>;
 
 impl Schema {
-    pub fn check(&'_ self) -> CheckResult<'_, ()> {
-        let table_map = self.collect_tables()?;
-
-        self.check_references(&table_map)?;
-
-        self.check_cyclic_references(&table_map)?;
-
-        self.populate_concrete_tables(&table_map)?;
+    pub fn check<'a>(&mut self) -> CheckResult<'a, ()> {
+        let inheritance_context = self.build_inheritance_context()?;
 
         Ok(())
     }
 
-    /// Populate the concrete tables with parent columns, also check for [`SemanticErr::ColumnRedeclaration`]
-    fn populate_concrete_tables(
-        &self,
-        table_map: &HashMap<&str, &TableDef>,
-    ) -> CheckResult<'_, ()> {
-        // todo: enhance this later to avoid duplication visits
-        for (table_name, table) in table_map {
-            match table.extended_by.as_ref() {
-                Some(parent_table_ident) => {
-                    let parent_table_name = parent_table_ident.name.as_str();
-                    let mut parent_table = table_map.get(parent_table_name).unwrap();
+    /// Collects tables and resolves all inherited columns into an owned HashMap
+    /// Returns `HashMap<String, Vec<ColumnDef>>` instead of references to avoid borrowing conflicts
+    /// Note: 'a is the lifetime of the Error, independent of the &self borrow
+    fn build_inheritance_context<'a>(&self) -> CheckResult<'a, HashMap<String, Vec<ColumnDef>>> {
+        let table_map = self.collect_tables()?;
 
-                    if parent_table.is_abstract {
-                        continue;
+        self.check_inheritance(&table_map)?;
+        self.check_cyclic_inheritance(&table_map)?;
+
+        let mut context: HashMap<String, Vec<ColumnDef>> = HashMap::new();
+
+        for (name, &table) in &table_map {
+            let mut inherited_columns: HashMap<&str, ColumnDef> = HashMap::new();
+            let mut cur_table = table;
+
+            loop {
+                match cur_table.extended_by.as_ref() {
+                    Some(parent_ident) => {
+                        let parent_name = parent_ident.name.as_str();
+
+                        match context.get(parent_name) {
+                            Some(parent_columns) => {
+                                for parent_column in parent_columns {
+                                    let parent_column_name = parent_column.id.name.as_str();
+                                    if inherited_columns.contains_key(parent_column_name) {
+                                        let errs = vec![Rich::custom(
+                                            parent_column.span,
+                                            format!("column {} is redeclared", parent_column_name),
+                                        )];
+                                        return Err(errs);
+                                    }
+                                    inherited_columns
+                                        .insert(parent_column_name, parent_column.clone());
+                                }
+                                break;
+                            }
+                            None => {
+                                let parent_table = table_map.get(parent_name).unwrap();
+
+                                for parent_column in &parent_table.columns {
+                                    let parent_column_name = parent_column.id.name.as_str();
+                                    if inherited_columns.contains_key(parent_column_name) {
+                                        let errs = vec![Rich::custom(
+                                            parent_column.span,
+                                            format!("column {} is redeclared", parent_column_name),
+                                        )];
+                                        return Err(errs);
+                                    }
+                                    inherited_columns
+                                        .insert(parent_column_name, parent_column.clone());
+                                }
+
+                                cur_table = parent_table;
+                            }
+                        }
                     }
-
-                    // todo: continue implementation
+                    None => break,
                 }
-                None => continue,
+            }
+
+            let inherited_columns_vec = inherited_columns.values().cloned().collect();
+            context.insert(name.to_string(), inherited_columns_vec);
+        }
+
+        Ok(context)
+    }
+
+    /// Check for [`SemanticErr::NonAbstractParent`], [`SemanticErr::NonExistentParent`]
+    /// Uses explicit lifetimes 'a (Error) and 's (Self/Map) to allow decoupling
+    fn check_inheritance<'a, 's>(
+        &self,
+        table_map: &HashMap<&'s str, &'s TableDef>,
+    ) -> CheckResult<'a, ()> {
+        for (_, table) in table_map {
+            if let Some(parent_ident) = table.extended_by.as_ref() {
+                let parent_name = parent_ident.name.as_str();
+
+                match table_map.get(parent_name) {
+                    Some(parent_table) => {
+                        if !parent_table.is_abstract {
+                            let errs = vec![
+                                Rich::custom(
+                                    table.span,
+                                    format!("table {} is referenced here", parent_name),
+                                ),
+                                Rich::custom(parent_table.span, "but it's not abstract"),
+                            ];
+                            return Err(errs);
+                        }
+                    }
+                    None => {
+                        let errs = vec![Rich::custom(
+                            parent_ident.span,
+                            format!("table {} is not existed", parent_name),
+                        )];
+                        return Err(errs);
+                    }
+                }
             }
         }
 
@@ -116,10 +200,10 @@ impl Schema {
     }
 
     /// Check for [`SemanticErr::CyclicRef`]
-    fn check_cyclic_references<'a>(
+    fn check_cyclic_inheritance<'a, 's>(
         &self,
-        table_map: &HashMap<&str, &TableDef>,
-    ) -> CheckResult<'_, ()> {
+        table_map: &HashMap<&'s str, &'s TableDef>,
+    ) -> CheckResult<'a, ()> {
         let mut checked: HashSet<&str> = HashSet::new();
 
         let mut sorted_tables: Vec<&TableDef> = table_map.values().copied().collect();
@@ -138,7 +222,7 @@ impl Schema {
 
             while !stack.is_empty() {
                 if let Some(cur_table) = stack.pop() {
-                    visited.push(&cur_table.id.name.as_str());
+                    visited.insert(cur_table.id.name.as_str());
                     match cur_table.extended_by.as_ref() {
                         Some(next_table_ident) => {
                             if checked.contains(next_table_ident.name.as_str()) {
@@ -154,7 +238,7 @@ impl Schema {
                                 // oops, this table has been visited
                                 let errs = vec![Rich::custom(
                                     next_table.span,
-                                    format!("cyclic reference happens at {next_table_name}",), // todo: return clearer err span which including the starting table and end table
+                                    format!("cyclic reference happens at {next_table_name}",),
                                 )];
                                 return Err(errs);
                             }
@@ -173,50 +257,15 @@ impl Schema {
         Ok(())
     }
 
-    /// Check for [`SemanticErr::NonAbstractParent`], [`SemanticErr::NonExistentParent`]
-    fn check_references<'a>(&self, table_map: &HashMap<&str, &TableDef>) -> CheckResult<'_, ()> {
-        for (_, table) in table_map {
-            if let Some(parent_ident) = table.extended_by.as_ref() {
-                let parent_name = parent_ident.name.as_str();
-
-                match table_map.get(parent_name) {
-                    Some(parent_table) => {
-                        // errors referenced [`Table`] is existed but not abstract
-                        if !parent_table.is_abstract {
-                            let errs = vec![
-                                Rich::custom(
-                                    table.span,
-                                    format!("table {} is referenced here", parent_name),
-                                ),
-                                Rich::custom(parent_table.span, "but it's not abstract"),
-                            ];
-                            return Err(errs);
-                        }
-                    }
-                    None => {
-                        // errors referenced [`Table`] is not existed
-                        let errs = vec![Rich::custom(
-                            parent_ident.span,
-                            format!("table {} is not existed", parent_name),
-                        )];
-                        return Err(errs);
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     /// Return a [`HashMap`] and also check for [`SemanticErr::TableRedeclaration`]
-    fn collect_tables(&'_ self) -> CheckResult<'_, HashMap<&'_ str, &'_ TableDef>> {
+    /// Crucial: 's is the lifetime of the borrow of self, 'a is the lifetime of the Error
+    fn collect_tables<'a, 's>(&'s self) -> CheckResult<'a, HashMap<&'s str, &'s TableDef>> {
         let mut map: HashMap<&str, &TableDef> = HashMap::new();
 
         for table in &self.tables {
             let table_name = table.id.name.as_str();
 
             if let Some(prev_table) = map.get(table_name) {
-                // errors [`Table`] is redeclared
                 let errs = vec![
                     Rich::custom(
                         prev_table.id.span,
@@ -238,15 +287,16 @@ mod tests {
     use super::*;
 
     fn assert_valid(src: &str) {
-        let schema = parse(src).unwrap();
+        let schema = &mut parse(src).unwrap();
         if let Err(errs) = schema.check() {
             print_report(src, errs);
             panic!("schema validation failed unexpectedly");
         }
+        println!("{:?}", serde_json::to_string(schema).unwrap().as_str())
     }
 
     fn assert_invalid(src: &str) {
-        let schema = parse(src).unwrap();
+        let schema = &mut parse(src).unwrap();
         if let Err(errs) = schema.check() {
             print_report(src, errs);
         } else {
