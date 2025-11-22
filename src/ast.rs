@@ -95,6 +95,10 @@ impl Schema {
         Ok(())
     }
 
+    fn check_reference(&'_ self) -> CheckResult<'_, ()> {
+        Ok(())
+    }
+
     /// Collects tables and resolves all inherited columns into an owned HashMap
     /// Returns `HashMap<String, Vec<ColumnDef>>` instead of references to avoid borrowing conflicts
     /// Note: 'a is the lifetime of the Error, independent of the &self borrow
@@ -109,6 +113,10 @@ impl Schema {
         for (name, &table) in &table_map {
             let mut inherited_columns: HashMap<&str, ColumnDef> = HashMap::new();
             let mut cur_table = table;
+
+            for column in &table.columns {
+                inherited_columns.insert(column.id.name.as_str(), column.clone());
+            }
 
             loop {
                 match cur_table.extended_by.as_ref() {
@@ -400,6 +408,20 @@ mod tests {
 
             abstract table foo extends hey {
                 name: uuid4
+            }
+        ";
+        assert_invalid(src);
+    }
+
+    #[test]
+    fn test_redeclared_column_ref_tables() {
+        let src = r"
+            abstract table bar {
+                id: string
+            }
+
+            table foo extends bar {
+                id: timestampz
             }
         ";
         assert_invalid(src);
