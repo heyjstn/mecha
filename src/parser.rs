@@ -50,11 +50,12 @@ where
         .then(index_section_parser().or_not())
         .then_ignore(select! { Token::RightBrace => () })
         .map_with(
-            |((((is_abstract, ident), extends), columns), _indexes_opt), extra| TableDef {
+            |((((is_abstract, ident), extends), columns), indexes), extra| TableDef {
                 id: ident,
                 is_abstract,
                 columns,
                 extended_by: extends,
+                indexes,
                 span: extra.span(),
             },
         )
@@ -284,6 +285,37 @@ fn test_invalid_table_should_false() {
         abstract table foo extends bar {
             created_at timestamp,
             updated_at: timestamp
+        }
+    ";
+    match parse(schema) {
+        Ok(schema) => assert!(schema.tables.len() > 0),
+        Err(errs) => {
+            for err in errs {
+                Report::build(ReportKind::Error, ((), err.span().into_range()))
+                    .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
+                    .with_code(11)
+                    .with_message(err.to_string())
+                    .with_label(
+                        Label::new(((), err.span().into_range()))
+                            .with_message(err.reason().to_string())
+                            .with_color(Color::Red),
+                    )
+                    .finish()
+                    .eprint(Source::from(schema))
+                    .unwrap();
+            }
+        }
+    }
+}
+
+#[test]
+fn test_indexed_table_should_ok() {
+    let schema: &str = r"
+         table foo {
+            id: uuid
+            indexes {
+                id
+            }
         }
     ";
     match parse(schema) {

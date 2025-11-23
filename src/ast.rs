@@ -14,10 +14,10 @@ pub enum RefOperator {
     ManyToMany,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub enum Index {
-    Single(Ident, SimpleSpan),
-    Composite(Vec<Ident>, SimpleSpan),
+    Single(Ident, #[serde(skip)] SimpleSpan),
+    Composite(Vec<Ident>, #[serde(skip)] SimpleSpan),
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -41,6 +41,7 @@ pub struct TableDef {
     pub is_abstract: bool,
     pub extended_by: Option<Ident>,
     pub columns: Vec<ColumnDef>,
+    pub indexes: Option<Vec<Index>>,
 
     #[serde(skip)]
     pub span: SimpleSpan,
@@ -56,9 +57,6 @@ pub struct ColumnDef {
     #[serde(skip)]
     pub span: SimpleSpan,
 }
-
-#[derive(Debug, Clone, Serialize)]
-pub struct IndexDef {}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ReferenceDef {
@@ -92,10 +90,45 @@ impl Schema {
     pub fn check<'a>(&mut self) -> CheckResult<'a, ()> {
         let inheritance_context = self.build_inheritance_context()?;
 
-        Ok(())
-    }
+        for table in &self.tables {
+            let Some(indexes) = &table.indexes else {
+                continue;
+            };
 
-    fn check_reference(&'_ self) -> CheckResult<'_, ()> {
+            let all_columns = inheritance_context
+                .get(table.id.name.as_str())
+                .expect("table seems not exist in the inheritance context");
+
+            let valid_column_names: HashSet<&str> =
+                all_columns.iter().map(|col| col.id.name.as_str()).collect();
+
+            let check_column = |id: &Ident| -> CheckResult<()> {
+                if !valid_column_names.contains(id.name.as_str()) {
+                    let errs = vec![Rich::custom(
+                        id.span,
+                        format!(
+                            "indexed column '{}' does not exist in table '{}'",
+                            id.name, table.id.name
+                        ),
+                    )];
+                    return Err(errs);
+                } else {
+                    Ok(())
+                }
+            };
+
+            for index in indexes {
+                match index {
+                    Index::Single(id, span) => check_column(id)?,
+                    Index::Composite(ids, span) => {
+                        for id in ids {
+                            check_column(id)?;
+                        }
+                    }
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -417,11 +450,54 @@ mod tests {
     fn test_redeclared_column_ref_tables() {
         let src = r"
             abstract table bar {
-                id: string
+                id: string,
+                name: string
             }
 
             table foo extends bar {
                 id: timestampz
+            }
+        ";
+        assert_invalid(src);
+    }
+
+    #[test]
+    fn test_indexes() {
+        let src = r"
+            table foo {
+                id: uuid,
+                name: string
+                indexes {
+                    id
+                }
+            }
+        ";
+        assert_valid(src);
+    }
+
+    #[test]
+    fn test_indexes_2() {
+        let src = r"
+            table foo {
+                id: uuid,
+                name: string
+                indexes {
+                    (id, name)
+                }
+            }
+        ";
+        assert_valid(src);
+    }
+
+    #[test]
+    fn test_indexes_not_exist_1() {
+        let src = r"
+            table foo {
+                id: uuid
+                indexes {
+                    id,
+                    name
+                }
             }
         ";
         assert_invalid(src);
