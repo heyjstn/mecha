@@ -1,10 +1,8 @@
 use crate::lexer::Token;
-use crate::parser::parse;
 use ariadne::{Color, Label, Report, ReportKind, Source};
-use chumsky::container::{Container, Seq};
 use chumsky::error::Rich;
-use chumsky::span::{SimpleSpan, Span};
-use serde::{Serialize, Serializer};
+use chumsky::span::SimpleSpan;
+use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Serialize)]
@@ -88,16 +86,22 @@ type CheckResult<'a, T> = Result<T, Vec<Rich<'a, Token<'a>, SimpleSpan>>>;
 
 impl Schema {
     pub fn check<'a>(&mut self) -> CheckResult<'a, ()> {
-        let inheritance_context = self.build_inheritance_context()?;
+        let extension_context = self.build_extension_context()?;
 
         for table in &self.tables {
             let Some(indexes) = &table.indexes else {
                 continue;
             };
 
-            let all_columns = inheritance_context
-                .get(table.id.name.as_str())
-                .expect("table seems not exist in the inheritance context");
+            let table_name = table.id.name.as_str();
+
+            let all_columns = extension_context.get(table_name).expect(
+                format!(
+                    "table '{}' not exist in the inheritance context",
+                    table_name
+                )
+                .as_str(),
+            );
 
             let valid_column_names: HashSet<&str> =
                 all_columns.iter().map(|col| col.id.name.as_str()).collect();
@@ -136,12 +140,12 @@ impl Schema {
                 };
 
                 let Some(referenced_table_column) =
-                    inheritance_context.get(reference.table.name.as_str())
+                    extension_context.get(reference.table.name.as_str())
                 else {
                     let errs = vec![Rich::custom(
                         reference.span,
                         format!(
-                            "table {} is not exist in the schema",
+                            "table '{}' is not exist in the schema",
                             reference.table.name.as_str()
                         ),
                     )];
@@ -157,7 +161,7 @@ impl Schema {
                     let errs = vec![Rich::custom(
                         reference.column.span,
                         format!(
-                            "column {} is not existed in the table {}",
+                            "column '{}' is not existed in the table '{}'",
                             reference.column.name.as_str(),
                             reference.table.name.as_str()
                         ),
@@ -170,72 +174,63 @@ impl Schema {
         Ok(())
     }
 
-    /// Collects tables and resolves all inherited columns into an owned HashMap
+    /// Collects tables and resolves all extended columns into an owned HashMap
     /// Returns `HashMap<String, Vec<ColumnDef>>` instead of references to avoid borrowing conflicts
     /// Note: 'a is the lifetime of the Error, independent of the &self borrow
-    fn build_inheritance_context<'a>(&self) -> CheckResult<'a, HashMap<String, Vec<ColumnDef>>> {
+    fn build_extension_context<'a>(&self) -> CheckResult<'a, HashMap<String, Vec<ColumnDef>>> {
         let table_map = self.collect_tables()?;
 
-        self.check_inheritance(&table_map)?;
-        self.check_cyclic_inheritance(&table_map)?;
+        self.check_extension(&table_map)?;
+        self.check_cyclic_extension(&table_map)?;
 
         let mut context: HashMap<String, Vec<ColumnDef>> = HashMap::new();
 
         for (name, &table) in &table_map {
-            let mut inherited_columns: HashMap<&str, ColumnDef> = HashMap::new();
-            let mut cur_table = table;
+            let mut extension_columns: HashMap<String, ColumnDef> = HashMap::new();
+            let mut current_table = table;
 
             for column in &table.columns {
-                inherited_columns.insert(column.id.name.as_str(), column.clone());
+                extension_columns.insert(column.id.name.clone(), column.clone());
             }
 
             loop {
-                match cur_table.extended_by.as_ref() {
-                    Some(parent_ident) => {
-                        let parent_name = parent_ident.name.as_str();
+                let Some(parent_table_ident) = current_table.extended_by.as_ref() else {
+                    break;
+                };
 
-                        match context.get(parent_name) {
-                            Some(parent_columns) => {
-                                for parent_column in parent_columns {
-                                    let parent_column_name = parent_column.id.name.as_str();
-                                    if inherited_columns.contains_key(parent_column_name) {
-                                        let errs = vec![Rich::custom(
-                                            parent_column.span,
-                                            format!("column {} is redeclared", parent_column_name),
-                                        )];
-                                        return Err(errs);
-                                    }
-                                    inherited_columns
-                                        .insert(parent_column_name, parent_column.clone());
-                                }
-                                break;
-                            }
-                            None => {
-                                let parent_table = table_map.get(parent_name).unwrap();
+                let parent_table_name = parent_table_ident.name.as_str();
 
-                                for parent_column in &parent_table.columns {
-                                    let parent_column_name = parent_column.id.name.as_str();
-                                    if inherited_columns.contains_key(parent_column_name) {
-                                        let errs = vec![Rich::custom(
-                                            parent_column.span,
-                                            format!("column {} is redeclared", parent_column_name),
-                                        )];
-                                        return Err(errs);
-                                    }
-                                    inherited_columns
-                                        .insert(parent_column_name, parent_column.clone());
-                                }
-
-                                cur_table = parent_table;
-                            }
+                let mut check_column = |parent_columns: &Vec<ColumnDef>| -> CheckResult<()> {
+                    for parent_column in parent_columns {
+                        let parent_column_name = parent_column.id.name.as_str();
+                        if extension_columns.contains_key(parent_column_name) {
+                            let errs = vec![Rich::custom(
+                                parent_column.span,
+                                format!("column '{}' is redeclared", parent_column_name),
+                            )];
+                            return Err(errs);
                         }
+                        extension_columns
+                            .insert(parent_column_name.to_string(), parent_column.clone());
                     }
-                    None => break,
+                    Ok(())
+                };
+
+                match context.get(parent_table_name) {
+                    Some(parent_columns) => {
+                        check_column(parent_columns)?;
+                        break;
+                    }
+                    None => {
+                        let parent_table = table_map.get(parent_table_name).unwrap();
+                        check_column(&parent_table.columns)?;
+                        current_table = parent_table;
+                    }
                 }
             }
 
-            let inherited_columns_vec = inherited_columns.values().cloned().collect();
-            context.insert(name.to_string(), inherited_columns_vec);
+            let extension_columns_vec = extension_columns.values().cloned().collect();
+            context.insert(name.to_string(), extension_columns_vec);
         }
 
         Ok(context)
@@ -243,7 +238,7 @@ impl Schema {
 
     /// Check for [`SemanticErr::NonAbstractParent`], [`SemanticErr::NonExistentParent`]
     /// Uses explicit lifetimes 'a (Error) and 's (Self/Map) to allow decoupling
-    fn check_inheritance<'a, 's>(
+    fn check_extension<'a, 's>(
         &self,
         table_map: &HashMap<&'s str, &'s TableDef>,
     ) -> CheckResult<'a, ()> {
@@ -279,7 +274,7 @@ impl Schema {
     }
 
     /// Check for [`SemanticErr::CyclicRef`]
-    fn check_cyclic_inheritance<'a, 's>(
+    fn check_cyclic_extension<'a, 's>(
         &self,
         table_map: &HashMap<&'s str, &'s TableDef>,
     ) -> CheckResult<'a, ()> {
@@ -363,6 +358,7 @@ impl Schema {
 
 #[cfg(test)]
 mod tests {
+    use crate::parser::parse;
     use super::*;
 
     fn assert_valid(src: &str) {
