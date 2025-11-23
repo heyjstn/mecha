@@ -1,5 +1,4 @@
 use crate::lexer::Token;
-use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::error::Rich;
 use chumsky::span::SimpleSpan;
 use serde::Serialize;
@@ -357,13 +356,13 @@ impl Schema {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::emitter;
     use crate::parser::parse;
 
     fn assert_valid(src: &str) {
         let schema = &mut parse(src).unwrap();
         if let Err(errs) = schema.check() {
-            print_report(src, errs);
+            emitter::diagnose(src, "test.mecha", errs);
             panic!("schema validation failed unexpectedly");
         }
         println!("{:?}", serde_json::to_string(schema).unwrap().as_str())
@@ -372,26 +371,9 @@ mod tests {
     fn assert_invalid(src: &str) {
         let schema = &mut parse(src).unwrap();
         if let Err(errs) = schema.check() {
-            print_report(src, errs);
+            emitter::diagnose(src, "test.mecha", errs);
         } else {
             panic!("schema validation succeeded but should have failed");
-        }
-    }
-
-    // todo: migrate this to an error diagnosis mod
-    fn print_report(src: &str, errs: Vec<Rich<Token, SimpleSpan>>) {
-        for err in errs {
-            Report::build(ReportKind::Error, ("main.mecha", err.span().into_range())) // todo: pass filename into this instead of hardcode
-                .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
-                .with_message(err.to_string())
-                .with_label(
-                    Label::new(("main.mecha", err.span().into_range()))
-                        .with_message(err.reason().to_string())
-                        .with_color(Color::Red),
-                )
-                .finish()
-                .print(("main.mecha", Source::from(src)))
-                .unwrap();
         }
     }
 

@@ -21,8 +21,13 @@
     "languages": [
       {
         "id": "mecha",
-        "aliases": ["Mecha", "mecha"],
-        "extensions": [".mecha"],
+        "aliases": [
+          "Mecha",
+          "mecha"
+        ],
+        "extensions": [
+          ".mecha"
+        ],
         "configuration": "./language-configuration.json"
       }
     ],
@@ -46,9 +51,10 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run build-lsp && npm run compile",
     "compile": "tsc -b",
-    "watch": "tsc -b -w"
+    "watch": "tsc -b -w",
+    "build-lsp": "cd ../lsp && cargo build --release && mkdir -p ../extension/bin && cp ../target/release/lsp ../extension/bin/lsp"
   },
   "devDependencies": {
     "@types/vscode": "^1.75.0",

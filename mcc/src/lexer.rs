@@ -1,10 +1,9 @@
-use std::fmt::{Display, Formatter};
-use logos::Logos;
 use chumsky::input::{Input, Stream, ValueInput};
 use chumsky::prelude::SimpleSpan;
+use logos::Logos;
+use std::fmt::{Display, Formatter};
 
-#[derive(Logos, Clone, PartialEq)]
-#[derive(Debug)]
+#[derive(Logos, Clone, PartialEq, Debug)]
 pub enum Token<'a> {
     Err,
 
@@ -84,7 +83,7 @@ impl<'a> Display for Token<'a> {
     }
 }
 
-pub fn lex(src: &'_ str) -> impl ValueInput<'_, Token=Token<'_>, Span=SimpleSpan> {
+pub fn lex(src: &'_ str) -> impl ValueInput<'_, Token = Token<'_>, Span = SimpleSpan> {
     let token_iter = Token::lexer(src).spanned().map(|(tok, span)| match tok {
         Ok(tok) => {
             let simple_span: SimpleSpan = span.into();

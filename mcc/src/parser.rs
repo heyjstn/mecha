@@ -6,8 +6,8 @@ use crate::lexer::Token;
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::error::Rich;
 use chumsky::input::ValueInput;
-use chumsky::prelude::{end, SimpleSpan};
-use chumsky::{extra, select, IterParser, Parser};
+use chumsky::prelude::{SimpleSpan, end};
+use chumsky::{IterParser, Parser, extra, select};
 
 fn schema_parser<'tokens, 'src: 'tokens, I>()
 -> impl Parser<'tokens, I, Schema, extra::Err<Rich<'tokens, Token<'src>>>>

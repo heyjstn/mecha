@@ -1,4 +1,4 @@
-use compiler::parser::parse;
+use mcc::parser::parse;
 use dashmap::DashMap;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
@@ -22,7 +22,7 @@ impl Backend {
 
         let mut diagnostics = Vec::new();
         let schema_result = parse(&text);
-        
+
         match schema_result {
             Ok(mut schema) => {
                 if let Err(errs) = schema.check() {
