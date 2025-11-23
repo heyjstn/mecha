@@ -78,7 +78,6 @@ version = "0.1.0"
 dependencies = [
  "ariadne",
  "chumsky",
- "log",
  "logos",
  "serde",
  "serde_json",
@@ -138,12 +137,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2874a2af47a2325c2001a6e6fad9b16a53b802102b528163885171cf92b15976"
 
 [[package]]
-name = "log"
-version = "0.4.28"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
-
-[[package]]
 name = "logos"
 version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -176,6 +169,10 @@ checksum = "605d9697bcd5ef3a42d38efc51541aa3d6a4a25f7ab6d1ed0da5ac632a26b470"
 dependencies = [
  "logos-codegen",
 ]
+
+[[package]]
+name = "mecha"
+version = "0.1.0"
 
 [[package]]
 name = "memchr"

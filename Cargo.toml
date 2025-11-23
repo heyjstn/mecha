@@ -1,12 +1,7 @@
 [package]
-name = "compiler"
+name = "mecha"
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
-logos = "0.15.1"
-chumsky = { version = "0.11.2", features = ["serde"] }
-ariadne = "0.6.0"
-log = "0.4.28"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.145"
+[workspace]
+members = ["compiler"]
