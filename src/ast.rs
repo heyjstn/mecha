@@ -116,9 +116,8 @@ impl Schema {
                         ),
                     )];
                     return Err(errs);
-                } else {
-                    Ok(())
                 }
+                Ok(())
             };
 
             for index in indexes {
