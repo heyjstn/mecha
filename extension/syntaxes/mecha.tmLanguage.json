@@ -1,0 +1,56 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "Mecha",
+    "patterns": [
+        {
+            "include": "#keywords"
+        },
+        {
+            "include": "#strings"
+        },
+        {
+            "include": "#comments"
+        },
+        {
+            "include": "#types"
+        }
+    ],
+    "repository": {
+        "keywords": {
+            "patterns": [
+                {
+                    "name": "keyword.control.mecha",
+                    "match": "\\b(table|abstract|extends|indexes|ref|primary|unique)\\b"
+                }
+            ]
+        },
+        "strings": {
+            "name": "string.quoted.double.mecha",
+            "begin": "\"",
+            "end": "\"",
+            "patterns": [
+                {
+                    "name": "constant.character.escape.mecha",
+                    "match": "\\\\."
+                }
+            ]
+        },
+        "comments": {
+            "patterns": [
+                {
+                    "name": "comment.line.double-slash.mecha",
+                    "match": "//.*$"
+                }
+            ]
+        },
+        "types": {
+            "patterns": [
+                {
+                    "name": "support.type.mecha",
+                    "match": "\\b(string|uuid|uuid4|timestamp|timestampz|int|float|bool)\\b"
+                }
+            ]
+        }
+    },
+    "scopeName": "source.mecha"
+}

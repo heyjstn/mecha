@@ -1,0 +1,10 @@
+[package]
+name = "lsp"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+compiler = { path = "../compiler"}
+tower-lsp = "0.20"
+tokio = { version = "1", features = ["full"] }
+dashmap = "5.5"
