@@ -1,2 +1,4 @@
-# Mecha 
-Mecha is an elegant language used for describing and visualize database schema
+# Mecha Extension
+
+Extension for highlighting/LSP supports for the `Mecha` DSL language
+
