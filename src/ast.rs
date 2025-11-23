@@ -292,33 +292,35 @@ impl Schema {
             stack.push(table);
 
             while !stack.is_empty() {
-                if let Some(cur_table) = stack.pop() {
-                    visited.insert(cur_table.id.name.as_str());
-                    match cur_table.extended_by.as_ref() {
-                        Some(next_table_ident) => {
-                            if checked.contains(next_table_ident.name.as_str()) {
-                                // this path is fine as this parent is not a part of any cyclic component
-                                continue;
-                            }
+                let Some(cur_table) = stack.pop() else {
+                    break;
+                };
 
-                            let next_table_name = next_table_ident.name.as_str();
+                visited.insert(cur_table.id.name.as_str());
 
-                            let next_table = table_map.get(next_table_name).unwrap(); // unwrap is fine because all referenced table is existed
+                let Some(next_table_id) = cur_table.extended_by.as_ref() else {
+                    continue;
+                };
 
-                            if visited.contains(next_table_name) {
-                                // oops, this table has been visited
-                                let errs = vec![Rich::custom(
-                                    next_table.span,
-                                    format!("cyclic reference happens at {next_table_name}",),
-                                )];
-                                return Err(errs);
-                            }
+                let next_table_name = next_table_id.name.as_str();
 
-                            stack.push(next_table);
-                        }
-                        None => continue,
-                    }
+                if checked.contains(next_table_name) {
+                    // this path is fine as this parent is not a part of any cyclic component
+                    continue;
                 }
+
+                let next_table = table_map.get(next_table_name).unwrap();
+
+                if visited.contains(next_table_name) {
+                    // oops, this table has been visited
+                    let errs = vec![Rich::custom(
+                        next_table.span,
+                        format!("cyclic reference happens at {next_table_name}",),
+                    )];
+                    return Err(errs);
+                }
+
+                stack.push(next_table);
             }
 
             // if reach this, all visited tables are fine
