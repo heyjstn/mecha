@@ -76,7 +76,9 @@ impl Backend {
             }
         }
 
-        self.client.publish_diagnostics(uri, diagnostics, None).await;
+        self.client
+            .publish_diagnostics(uri, diagnostics, None)
+            .await;
     }
 }
 
@@ -105,20 +107,22 @@ impl LanguageServer for Backend {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
                     TextDocumentSyncKind::FULL,
                 )),
-                semantic_tokens_provider: Some(SemanticTokensServerCapabilities::SemanticTokensOptions(
-                    SemanticTokensOptions {
-                        legend: SemanticTokensLegend {
-                            token_types: vec![
-                                SemanticTokenType::CLASS,
-                                SemanticTokenType::PROPERTY,
-                                SemanticTokenType::TYPE,
-                            ],
-                            token_modifiers: vec![],
+                semantic_tokens_provider: Some(
+                    SemanticTokensServerCapabilities::SemanticTokensOptions(
+                        SemanticTokensOptions {
+                            legend: SemanticTokensLegend {
+                                token_types: vec![
+                                    SemanticTokenType::CLASS,
+                                    SemanticTokenType::PROPERTY,
+                                    SemanticTokenType::TYPE,
+                                ],
+                                token_modifiers: vec![],
+                            },
+                            full: Some(SemanticTokensFullOptions::Bool(true)),
+                            ..Default::default()
                         },
-                        full: Some(SemanticTokensFullOptions::Bool(true)),
-                        ..Default::default()
-                    },
-                )),
+                    ),
+                ),
                 ..Default::default()
             },
             ..Default::default()
@@ -130,7 +134,8 @@ impl LanguageServer for Backend {
     }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
-        self.on_change(params.text_document.uri, params.text_document.text).await;
+        self.on_change(params.text_document.uri, params.text_document.text)
+            .await;
     }
 
     async fn did_change(&self, params: DidChangeTextDocumentParams) {
@@ -145,15 +150,15 @@ impl LanguageServer for Backend {
     ) -> Result<Option<SemanticTokensResult>> {
         let uri = params.text_document.uri.to_string();
         let Some(text) = self.document_map.get(&uri) else {
-             return Ok(None);
+            return Ok(None);
         };
-        
+
         let Ok(schema) = parse(&text) else {
             return Ok(None);
         };
 
         let mut semantic_tokens = Vec::new();
-        
+
         let mut raw_tokens: Vec<(u32, u32, u32, u32)> = Vec::new();
 
         for table in schema.tables {
@@ -163,15 +168,15 @@ impl LanguageServer for Backend {
             raw_tokens.push((line, col, len, 0)); // 0 = CLASS
 
             for column in table.columns {
-                 let span = column.id.span;
-                 let (line, col) = byte_index_to_line_col(&text, span.start);
-                 let len = (span.end - span.start) as u32;
-                 raw_tokens.push((line, col, len, 1)); // 1 = PROPERTY
+                let span = column.id.span;
+                let (line, col) = byte_index_to_line_col(&text, span.start);
+                let len = (span.end - span.start) as u32;
+                raw_tokens.push((line, col, len, 1)); // 1 = PROPERTY
 
-                 let span = column.typ.span;
-                 let (line, col) = byte_index_to_line_col(&text, span.start);
-                 let len = (span.end - span.start) as u32;
-                 raw_tokens.push((line, col, len, 2)); // 2 = TYPE
+                let span = column.typ.span;
+                let (line, col) = byte_index_to_line_col(&text, span.start);
+                let len = (span.end - span.start) as u32;
+                raw_tokens.push((line, col, len, 2)); // 2 = TYPE
             }
         }
 

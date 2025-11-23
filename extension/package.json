@@ -2,6 +2,10 @@
   "name": "mecha-lsp",
   "displayName": "Mecha LSP",
   "description": "Language Server for Mecha",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/heyjstn/mecha/extension"
+  },
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.75.0"
