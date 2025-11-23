@@ -129,6 +129,44 @@ impl Schema {
             }
         }
 
+        for table in &self.tables {
+            for column in &table.columns {
+                let Some(reference) = &column.reference else {
+                    continue;
+                };
+
+                let Some(referenced_table_column) =
+                    inheritance_context.get(reference.table.name.as_str())
+                else {
+                    let errs = vec![Rich::custom(
+                        reference.span,
+                        format!(
+                            "table {} is not exist in the schema",
+                            reference.table.name.as_str()
+                        ),
+                    )];
+                    return Err(errs);
+                };
+
+                let valid_referenced_columns: HashSet<&str> = referenced_table_column
+                    .iter()
+                    .map(|col| col.id.name.as_str())
+                    .collect();
+
+                if !valid_referenced_columns.contains(reference.column.name.as_str()) {
+                    let errs = vec![Rich::custom(
+                        reference.column.span,
+                        format!(
+                            "column {} is not existed in the table {}",
+                            reference.column.name.as_str(),
+                            reference.table.name.as_str()
+                        ),
+                    )];
+                    return Err(errs);
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -490,6 +528,23 @@ mod tests {
     }
 
     #[test]
+    fn test_indexes_3() {
+        let src = r"
+            abstract table bar {
+                name: string
+            }
+
+            table foo extends bar {
+                id: uuid
+                indexes {
+                    (id, name)
+                }
+            }
+        ";
+        assert_valid(src);
+    }
+
+    #[test]
     fn test_indexes_not_exist_1() {
         let src = r"
             table foo {
@@ -497,6 +552,38 @@ mod tests {
                 indexes {
                     id,
                     name
+                }
+            }
+        ";
+        assert_invalid(src);
+    }
+
+    #[test]
+    fn test_referenced_table_not_exist_1() {
+        let src = r"
+            table foo {
+                id: uuid,
+                bar_id: uuid (ref => bar.id)
+                indexes {
+                    id
+                }
+            }
+        ";
+        assert_invalid(src);
+    }
+
+    #[test]
+    fn test_referenced_table_column_not_exist_1() {
+        let src = r"
+            table bar {
+                name: string
+            }
+
+            table foo {
+                id: uuid,
+                bar_id: uuid (ref => bar.id)
+                indexes {
+                    id
                 }
             }
         ";
