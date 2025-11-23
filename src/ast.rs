@@ -218,6 +218,7 @@ impl Schema {
 
                 match context.get(parent_table_name) {
                     Some(parent_columns) => {
+                        // in this case, the parent table has been visited -> aggregate columns to current table
                         check_column(parent_columns)?;
                         break;
                     }
@@ -358,8 +359,8 @@ impl Schema {
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::parse;
     use super::*;
+    use crate::parser::parse;
 
     fn assert_valid(src: &str) {
         let schema = &mut parse(src).unwrap();
