@@ -246,26 +246,23 @@ impl Schema {
             if let Some(parent_ident) = table.extended_by.as_ref() {
                 let parent_name = parent_ident.name.as_str();
 
-                match table_map.get(parent_name) {
-                    Some(parent_table) => {
-                        if !parent_table.is_abstract {
-                            let errs = vec![
-                                Rich::custom(
-                                    table.span,
-                                    format!("table {} is referenced here", parent_name),
-                                ),
-                                Rich::custom(parent_table.span, "but it's not abstract"),
-                            ];
-                            return Err(errs);
-                        }
-                    }
-                    None => {
-                        let errs = vec![Rich::custom(
-                            parent_ident.span,
-                            format!("table {} is not existed", parent_name),
-                        )];
-                        return Err(errs);
-                    }
+                let Some(parent_table) = table_map.get(parent_name) else {
+                    let errs = vec![Rich::custom(
+                        parent_ident.span,
+                        format!("table {} is not existed", parent_name),
+                    )];
+                    return Err(errs);
+                };
+
+                if !parent_table.is_abstract {
+                    let errs = vec![
+                        Rich::custom(
+                            table.span,
+                            format!("table {} is referenced here", parent_name),
+                        ),
+                        Rich::custom(parent_table.span, "but it's not abstract"),
+                    ];
+                    return Err(errs);
                 }
             }
         }
