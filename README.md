@@ -2,7 +2,7 @@
 
 # Mecha
 
-[![image](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/heyjstn/mecha/blob/main/LICENSE) [![Rust](https://github.com/heyjstn/mecha/actions/workflows/rust.yml/badge.svg)](https://github.com/heyjstn/mecha/actions/workflows/rust.yml)
+[![image](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/heyjstn/mecha/blob/main/LICENSE) [![Rust](https://github.com/heyjstn/mecha/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/heyjstn/mecha/actions/workflows/rust.yml)
 
 [**Docs**](https://mecha.heyjstn.dev/docs/) | [**Playground**](https://mecha.heyjstn.dev/) | [**Contact**](mailto:lwuminhtris@gmail.com)
 
