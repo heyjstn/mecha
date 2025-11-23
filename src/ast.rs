@@ -584,4 +584,38 @@ mod tests {
         ";
         assert_invalid(src);
     }
+
+    #[test]
+    fn test_complex_prog1() {
+        let src = r"
+            abstract table common {
+                created_at: timestampz,
+                updated_at: timestampz
+            }
+
+            table users extends common {
+                id: uuid (ref => users_reading_books.user_id),
+                name: string
+                indexes {
+                    id
+                }
+            }
+
+            table books extends common {
+                id: uuid (ref => users_reading_books.book_id),
+                isbn_id: uuid,
+                name: string
+                indexes {
+                    id,
+                    (id, isbn_id)
+                }
+            }
+
+            table users_reading_books extends common {
+                user_id: uuid,
+                book_id: uuid
+            }
+        ";
+        assert_valid(src);
+    }
 }
