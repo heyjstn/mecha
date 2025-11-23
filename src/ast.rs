@@ -217,7 +217,7 @@ impl Schema {
 
                 match context.get(parent_table_name) {
                     Some(parent_columns) => {
-                        // in this case, the parent table has been visited -> aggregate columns to current table
+                        // parent table has been visited => aggregate columns to current table
                         check_column(parent_columns)?;
                         break;
                     }
@@ -240,7 +240,7 @@ impl Schema {
     /// Uses explicit lifetimes 'a (Error) and 's (Self/Map) to allow decoupling
     fn check_extension<'a, 's>(
         &self,
-        table_map: &HashMap<&'s str, &'s TableDef>,
+        table_map: &HashMap<String, &'s TableDef>,
     ) -> CheckResult<'a, ()> {
         for (_, table) in table_map {
             if let Some(parent_ident) = table.extended_by.as_ref() {
@@ -273,7 +273,7 @@ impl Schema {
     /// Check for [`SemanticErr::CyclicRef`]
     fn check_cyclic_extension<'a, 's>(
         &self,
-        table_map: &HashMap<&'s str, &'s TableDef>,
+        table_map: &HashMap<String, &'s TableDef>,
     ) -> CheckResult<'a, ()> {
         let mut checked: HashSet<&str> = HashSet::new();
 
@@ -332,8 +332,8 @@ impl Schema {
 
     /// Return a [`HashMap`] and also check for [`SemanticErr::TableRedeclaration`]
     /// Crucial: 's is the lifetime of the borrow of self, 'a is the lifetime of the Error
-    fn collect_tables<'a, 's>(&'s self) -> CheckResult<'a, HashMap<&'s str, &'s TableDef>> {
-        let mut map: HashMap<&str, &TableDef> = HashMap::new();
+    fn collect_tables<'a, 's>(&'s self) -> CheckResult<'a, HashMap<String, &'s TableDef>> {
+        let mut map: HashMap<String, &TableDef> = HashMap::new();
 
         for table in &self.tables {
             let table_name = table.id.name.as_str();
@@ -349,7 +349,7 @@ impl Schema {
                 return Err(errs);
             }
 
-            map.insert(&table.id.name, table);
+            map.insert(table.id.name.clone(), table);
         }
         Ok(map)
     }
