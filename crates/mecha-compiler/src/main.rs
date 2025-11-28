@@ -53,7 +53,7 @@ fn main() {
             let Ok(src) = String::from_utf8(res) else {
                 panic!("unable to open file at {source}")
             };
-            mcc::emitter::flush(
+            mecha_compiler::emitter::flush(
                 src.as_str(),
                 source_filename_ext_str,
                 default_output_dir_str,

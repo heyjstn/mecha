@@ -4,4 +4,4 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace]
-members = ["mcc", "lsp"]
+members = ["crates/mecha-compiler", "crates/mecha-lsp"]
