@@ -1,7 +1,2 @@
-[package]
-name = "mecha"
-version = "0.1.0"
-edition = "2024"
-
 [workspace]
 members = ["crates/mecha-compiler", "crates/mecha-lsp"]

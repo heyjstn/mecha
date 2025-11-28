@@ -586,10 +586,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mecha"
-version = "0.1.0"
-
-[[package]]
 name = "mecha-compiler"
 version = "0.1.0"
 dependencies = [
