@@ -1,4 +1,5 @@
 pub mod ast;
-pub mod emitter;
+pub mod codegen;
 pub mod lexer;
 pub mod parser;
+pub mod semantic;

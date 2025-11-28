@@ -21,19 +21,22 @@ pub fn diagnose(src: &str, filename: &str, errs: Vec<Rich<Token, SimpleSpan>>) {
     }
 }
 
-pub fn flush(src: &str, input_filename: &str, output_dir: &str, output_name: &str) -> () {
-    match parse(src) {
-        Err(errs) => {
-            diagnose(src, input_filename, errs);
+pub fn compile(src: &str, input_filename: &str, output_dir: &str, output_name: &str) {
+    let Ok(mut ast) = parse(src) else {
+        diagnose(src, input_filename, parse(src).err().unwrap());
+        return;
+    };
+
+    let Ok(_) = ast.check() else {
+        diagnose(src, input_filename, ast.check().err().unwrap());
+        return;
+    };
+
+    let str = serde_json::to_string(&ast).unwrap_or_default();
+    match fs::write(format!("{output_dir}/{output_name}"), str) {
+        Ok(_) => println!("{output_name} is compiled in {output_dir}"),
+        Err(err) => {
+            println!("errors while flushing {output_name} into {output_dir}, err={err}")
         }
-        Ok(schema) => {
-            let str = serde_json::to_string(&schema).unwrap_or("".to_string());
-            match fs::write(format!("{output_dir}/{output_name}"), str) {
-                Ok(_) => println!("{output_name} is compiled in {output_dir}"),
-                Err(err) => {
-                    println!("errors while flushing {output_name} into {output_dir}, err={err}")
-                }
-            };
-        }
-    }
+    };
 }

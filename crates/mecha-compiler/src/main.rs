@@ -1,64 +1,54 @@
-use clap::{Arg, Command};
+use anyhow::{Context, Result};
+use clap::Parser;
+use std::path::PathBuf;
 use std::{env, fs};
 
-fn main() {
-    let matches = Command::new("mecha-compiler")
-        .arg(
-            Arg::new("source")
-                .short('s')
-                .long("source")
-                .required(true)
-                .help("the dir of source .schema file"),
-        )
-        .arg(
-            Arg::new("out")
-                .short('o')
-                .long("out")
-                .required(false)
-                .help("the dir of output .json file"),
-        )
-        .arg(
-            Arg::new("target")
-                .short('t')
-                .long("target")
-                .required(false)
-                .help("the sql type target, valids are pgsql, mysql"),
-        )
-        .get_matches();
+#[derive(Parser, Debug)]
+struct Args {
+    #[arg(short, long)]
+    source: PathBuf,
 
-    let source = matches
-        .get_one::<String>("source")
-        .expect("source file must not empty");
+    #[arg(short, long)]
+    out: Option<PathBuf>,
 
-    let cur_dir = env::current_dir().unwrap();
-    let default_output_dir_str = &cur_dir.to_str().unwrap().to_string();
+    #[arg(short, long)]
+    target: Option<String>,
+}
 
-    let source_path_segments: Vec<&str> = source.split("/").collect();
-    let source_filename_ext_str = *source_path_segments.last().unwrap();
-    let source_filename_ext_segments: Vec<&str> = source_filename_ext_str.split(".").collect();
-    let source_filename_str = source_filename_ext_segments.get(0).unwrap();
-    let default_output_filename_ext = format!("{source_filename_str}.json");
-    let default_output_filename_ext_str = &default_output_filename_ext;
+fn main() -> Result<()> {
+    let args = Args::parse();
 
-    let out = matches
-        .get_one::<String>("out")
-        .unwrap_or(default_output_dir_str);
+    let source_path = args.source;
 
-    println!("source = {source}");
-    println!("full_output_path = {default_output_dir_str}/{default_output_filename_ext_str}");
-
-    match fs::read(source) {
-        Err(err) => panic!("{err}"),
-        Ok(res) => {
-            let Ok(src) = String::from_utf8(res) else {
-                panic!("unable to open file at {source}")
-            };
-            mecha_compiler::emitter::flush(
-                src.as_str(),
-                source_filename_ext_str,
-                default_output_dir_str,
-                default_output_filename_ext_str,
-            );
-        }
+    if !source_path.exists() {
+        anyhow::bail!("source file doesn't exist: {}", source_path.display());
     }
+
+    let current_dir = env::current_dir().context("failed to get current dir")?;
+    let output_dir = args.out.unwrap_or(current_dir);
+
+    let file_stem = source_path
+        .file_stem()
+        .context("invalid source filename")?
+        .to_string_lossy();
+
+    let output_filename = format!("{}.json", file_stem);
+    let full_output_path = output_dir.join(&output_filename);
+
+    println!("source = {}", source_path.display());
+    println!("full_output_path = {}", full_output_path.display());
+
+    let src = fs::read_to_string(&source_path)
+        .with_context(|| format!("unable to read source file at {}", source_path.display()))?;
+
+    let source_filename = source_path
+        .file_name()
+        .context("invalid source filename")?
+        .to_string_lossy();
+
+    let output_dir_str = output_dir.to_string_lossy();
+
+    mecha_compiler::codegen::compile(&src, &source_filename, &output_dir_str, &output_filename);
+
+    Ok(())
 }
