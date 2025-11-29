@@ -48,7 +48,7 @@ fn main() -> Result<()> {
 
     let output_dir_str = output_dir.to_string_lossy();
 
-    mecha_compiler::codegen::compile(&src, &source_filename, &output_dir_str, &output_filename);
+    cores::codegen::compile(&src, &source_filename, &output_dir_str, &output_filename);
 
     Ok(())
 }

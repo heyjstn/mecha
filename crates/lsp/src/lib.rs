@@ -1,7 +1,7 @@
 use chumsky::error::Rich;
+use cores::lexer::Token;
+use cores::parser::parse;
 use dashmap::DashMap;
-use mecha_compiler::lexer::Token;
-use mecha_compiler::parser::parse;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer};
