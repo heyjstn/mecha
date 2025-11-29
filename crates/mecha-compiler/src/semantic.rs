@@ -493,13 +493,14 @@ mod tests {
     #[test]
     fn test_complex_prog1() {
         let src = r"
+            // common represent sharable properties
             abstract table common {
                 created_at: timestampz,
                 updated_at: timestampz
             }
 
             table users extends common {
-                id: uuid (ref => users_reading_books.user_id),
+                id: uuid (ref => users_reading_books.user_id), // 1 -> N relation
                 name: string
                 indexes {
                     id
@@ -516,6 +517,7 @@ mod tests {
                 }
             }
 
+            // table represent normalization
             table users_reading_books extends common {
                 user_id: uuid,
                 book_id: uuid

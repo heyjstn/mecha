@@ -54,7 +54,7 @@ pub enum Token<'a> {
     #[regex(r"[ \t\f\n]+", logos::skip)]
     Whitespace,
 
-    #[regex(r"//[a-zA-Z0-9_]*", logos::skip)]
+    #[regex(r"//[^\n]*", logos::skip)]
     Comment,
 }
 

@@ -4,7 +4,6 @@ use crate::ast::{
 use crate::codegen::diagnose;
 use crate::lexer;
 use crate::lexer::Token;
-use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::error::Rich;
 use chumsky::input::ValueInput;
 use chumsky::prelude::{end, SimpleSpan};
@@ -281,6 +280,23 @@ fn test_indexed_table_should_ok() {
     let schema: &str = r"
          table foo {
             id: uuid
+            indexes {
+                id
+            }
+        }
+    ";
+    match parse("test.mecha", schema) {
+        Ok(schema) => assert!(schema.tables.len() > 0),
+        Err(errs) => diagnose(schema, "test.mecha", errs),
+    }
+}
+
+#[test]
+fn test_comment_should_ok() {
+    let schema: &str = r"
+        // example comment
+        table foo {
+            id: uuid // example id
             indexes {
                 id
             }
