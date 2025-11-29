@@ -1,10 +1,10 @@
 [package]
-name = "mecha-lsp"
+name = "lsp"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-mecha-compiler = { path = "../mecha-compiler" }
+core = { path = "../core" }
 tower-lsp = "0.20"
 tokio = { version = "1", features = ["full"] }
 dashmap = "6.1.0"

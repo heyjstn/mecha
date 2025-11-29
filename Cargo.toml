@@ -1,2 +1,2 @@
 [workspace]
-members = ["crates/mecha-compiler", "crates/mecha-lsp"]
+members = ["crates/core", "crates/lsp"]

@@ -13,9 +13,6 @@ struct Args {
 
     #[arg(short, long)]
     target: Option<String>,
-
-    #[arg(short, long)]
-    visualize: Option<bool>
 }
 
 fn main() -> Result<()> {

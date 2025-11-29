@@ -215,6 +215,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b05b61dc5112cbb17e4b6cd61790d9845d13888356391624cbe7e41efeac1e75"
 
 [[package]]
+name = "core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ariadne",
+ "chumsky",
+ "clap",
+ "logos",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "crossbeam-utils"
 version = "0.8.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -573,6 +586,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lsp"
+version = "0.1.0"
+dependencies = [
+ "chumsky",
+ "core",
+ "dashmap 6.1.0",
+ "tokio",
+ "tower-lsp",
+]
+
+[[package]]
 name = "lsp-types"
 version = "0.94.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -583,30 +607,6 @@ dependencies = [
  "serde_json",
  "serde_repr",
  "url",
-]
-
-[[package]]
-name = "mecha-compiler"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ariadne",
- "chumsky",
- "clap",
- "logos",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "mecha-lsp"
-version = "0.1.0"
-dependencies = [
- "chumsky",
- "dashmap 6.1.0",
- "mecha-compiler",
- "tokio",
- "tower-lsp",
 ]
 
 [[package]]
