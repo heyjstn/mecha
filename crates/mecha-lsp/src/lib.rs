@@ -1,4 +1,6 @@
+use chumsky::error::Rich;
 use dashmap::DashMap;
+use mecha_compiler::lexer::Token;
 use mecha_compiler::parser::parse;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
@@ -21,58 +23,41 @@ impl Backend {
         self.document_map.insert(uri.to_string(), text.clone());
 
         let mut diagnostics = Vec::new();
-        let schema_result = parse("", &text); // todo: add source name here
+        let schema_result = parse(uri.path(), &text);
+
+        let mut handle_errs = |errs: Vec<Rich<Token>>| {
+            for err in errs {
+                let span = err.span();
+                let (start_line, start_col) = byte_index_to_line_col(&text, span.start);
+                let (end_line, end_col) = byte_index_to_line_col(&text, span.end);
+
+                diagnostics.push(Diagnostic {
+                    range: Range {
+                        start: Position {
+                            line: start_line,
+                            character: start_col,
+                        },
+                        end: Position {
+                            line: end_line,
+                            character: end_col,
+                        },
+                    },
+                    severity: Some(DiagnosticSeverity::ERROR),
+                    message: err.to_string(),
+                    source: Some("mecha-lsp".to_string()),
+                    ..Default::default()
+                });
+            }
+        };
 
         match schema_result {
             Ok(mut schema) => {
                 if let Err(errs) = schema.check() {
-                    for err in errs {
-                        let span = err.span();
-                        let (start_line, start_col) = byte_index_to_line_col(&text, span.start);
-                        let (end_line, end_col) = byte_index_to_line_col(&text, span.end);
-
-                        diagnostics.push(Diagnostic {
-                            range: Range {
-                                start: Position {
-                                    line: start_line,
-                                    character: start_col,
-                                },
-                                end: Position {
-                                    line: end_line,
-                                    character: end_col,
-                                },
-                            },
-                            severity: Some(DiagnosticSeverity::ERROR),
-                            message: err.to_string(),
-                            source: Some("mecha-lsp".to_string()),
-                            ..Default::default()
-                        });
-                    }
+                    handle_errs(errs);
                 }
             }
             Err(errs) => {
-                for err in errs {
-                    let span = err.span();
-                    let (start_line, start_col) = byte_index_to_line_col(&text, span.start);
-                    let (end_line, end_col) = byte_index_to_line_col(&text, span.end);
-
-                    diagnostics.push(Diagnostic {
-                        range: Range {
-                            start: Position {
-                                line: start_line,
-                                character: start_col,
-                            },
-                            end: Position {
-                                line: end_line,
-                                character: end_col,
-                            },
-                        },
-                        severity: Some(DiagnosticSeverity::ERROR),
-                        message: err.to_string(),
-                        source: Some("mecha-lsp".to_string()),
-                        ..Default::default()
-                    });
-                }
+                handle_errs(errs);
             }
         }
 
@@ -153,7 +138,7 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        let Ok(schema) = parse("", &text) else { // todo: add source name here
+        let Ok(schema) = parse(params.text_document.uri.path(), &text) else {
             return Ok(None);
         };
 

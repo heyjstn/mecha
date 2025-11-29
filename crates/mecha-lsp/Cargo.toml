@@ -8,3 +8,4 @@ mecha-compiler = { path = "../mecha-compiler" }
 tower-lsp = "0.20"
 tokio = { version = "1", features = ["full"] }
 dashmap = "6.1.0"
+chumsky = { version = "0.11.2", features = ["serde"] }

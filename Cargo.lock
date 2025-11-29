@@ -602,6 +602,7 @@ dependencies = [
 name = "mecha-lsp"
 version = "0.1.0"
 dependencies = [
+ "chumsky",
  "dashmap 6.1.0",
  "mecha-compiler",
  "tokio",
