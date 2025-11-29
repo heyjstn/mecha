@@ -21,7 +21,7 @@ impl Backend {
         self.document_map.insert(uri.to_string(), text.clone());
 
         let mut diagnostics = Vec::new();
-        let schema_result = parse(&text);
+        let schema_result = parse("", &text); // todo: add source name here
 
         match schema_result {
             Ok(mut schema) => {
@@ -153,7 +153,7 @@ impl LanguageServer for Backend {
             return Ok(None);
         };
 
-        let Ok(schema) = parse(&text) else {
+        let Ok(schema) = parse("", &text) else { // todo: add source name here
             return Ok(None);
         };
 

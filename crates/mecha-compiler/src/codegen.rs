@@ -4,6 +4,7 @@ use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::error::Rich;
 use chumsky::prelude::SimpleSpan;
 use std::fs;
+use std::path::Path;
 
 pub fn diagnose(src: &str, filename: &str, errs: Vec<Rich<Token, SimpleSpan>>) {
     for err in errs {
@@ -22,21 +23,33 @@ pub fn diagnose(src: &str, filename: &str, errs: Vec<Rich<Token, SimpleSpan>>) {
 }
 
 pub fn compile(src: &str, input_filename: &str, output_dir: &str, output_name: &str) {
-    let Ok(mut ast) = parse(src) else {
-        diagnose(src, input_filename, parse(src).err().unwrap());
-        return;
+    let mut ast = match parse(input_filename, src) {
+        Ok(ast) => ast,
+        Err(errs) => {
+            diagnose(src, input_filename, errs);
+            return;
+        }
     };
 
-    let Ok(_) = ast.check() else {
-        diagnose(src, input_filename, ast.check().err().unwrap());
+    if let Err(errs) = ast.check() {
+        diagnose(src, input_filename, errs);
         return;
+    }
+
+    let json_output = match serde_json::to_string(&ast) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("failed to serialized the produced ast err={}", e);
+            return;
+        }
     };
 
-    let str = serde_json::to_string(&ast).unwrap_or_default();
-    match fs::write(format!("{output_dir}/{output_name}"), str) {
+    let output_path = Path::new(output_dir).join(output_name);
+
+    match fs::write(&output_path, json_output) {
         Ok(_) => println!("{output_name} is compiled in {output_dir}"),
         Err(err) => {
-            println!("errors while flushing {output_name} into {output_dir}, err={err}")
+            eprintln!("error writing to {} err={}", output_path.display(), err)
         }
     };
 }

@@ -53,6 +53,9 @@ pub enum Token<'a> {
 
     #[regex(r"[ \t\f\n]+", logos::skip)]
     Whitespace,
+
+    #[regex(r"//[a-zA-Z0-9_]*", logos::skip)]
+    Comment,
 }
 
 impl<'a> Display for Token<'a> {
@@ -78,7 +81,7 @@ impl<'a> Display for Token<'a> {
             Token::Colon => write!(f, ":"),
             Token::Indexes => write!(f, "indexes"),
             Token::Whitespace => write!(f, "<whitespace>"),
-            _ => write!(f, "<unexisted>"),
+            Token::Comment => write!(f, "<comment>"),
         }
     }
 }

@@ -1,8 +1,8 @@
-use std::collections::{HashMap, HashSet};
-use chumsky::error::Rich;
-use chumsky::span::SimpleSpan;
 use crate::ast::{ColumnDef, Ident, Index, Schema, TableDef};
 use crate::lexer::Token;
+use chumsky::error::Rich;
+use chumsky::span::SimpleSpan;
+use std::collections::{HashMap, HashSet};
 
 type CheckResult<'a, T> = Result<T, Vec<Rich<'a, Token<'a>, SimpleSpan>>>;
 
@@ -283,7 +283,7 @@ mod tests {
     use crate::parser::parse;
 
     fn assert_valid(src: &str) {
-        let schema = &mut parse(src).unwrap();
+        let schema = &mut parse("test.mecha", src).unwrap();
         if let Err(errs) = schema.check() {
             codegen::diagnose(src, "test.mecha", errs);
             panic!("schema validation failed unexpectedly");
@@ -292,7 +292,7 @@ mod tests {
     }
 
     fn assert_invalid(src: &str) {
-        let schema = &mut parse(src).unwrap();
+        let schema = &mut parse("test.mecha", src).unwrap();
         if let Err(errs) = schema.check() {
             codegen::diagnose(src, "test.mecha", errs);
         } else {

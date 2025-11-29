@@ -1,16 +1,18 @@
 use crate::ast::{
     ColumnAttribute, ColumnDef, Ident, Index, RefOperator, ReferenceDef, Schema, TableDef,
 };
+use crate::codegen::diagnose;
 use crate::lexer;
 use crate::lexer::Token;
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::error::Rich;
 use chumsky::input::ValueInput;
-use chumsky::prelude::{SimpleSpan, end};
-use chumsky::{IterParser, Parser, extra, select};
+use chumsky::prelude::{end, SimpleSpan};
+use chumsky::{extra, select, IterParser, Parser};
 
-fn schema_parser<'tokens, 'src: 'tokens, I>()
--> impl Parser<'tokens, I, Schema, extra::Err<Rich<'tokens, Token<'src>>>>
+fn schema_parser<'tokens, 'src: 'tokens, I>(
+    source_name: &str,
+) -> impl Parser<'tokens, I, Schema, extra::Err<Rich<'tokens, Token<'src>>>>
 where
     I: ValueInput<'tokens, Token = Token<'src>, Span = SimpleSpan>,
 {
@@ -20,7 +22,7 @@ where
         .collect::<Vec<_>>()
         .then_ignore(end())
         .map_with(|table, extra| Schema {
-            name: "main.mecha".to_string(),
+            name: source_name.to_string(),
             tables: table,
             span: extra.span(),
         })
@@ -198,28 +200,9 @@ where
         .then_ignore(select! { Token::RightBrace => () }.labelled("'}'"))
 }
 
-pub fn parse(src: &'_ str) -> Result<Schema, Vec<Rich<'_, Token<'_>>>> {
+pub fn parse<'a>(source_name: &'a str, src: &'a str) -> Result<Schema, Vec<Rich<'a, Token<'a>>>> {
     let tokens = lexer::lex(src);
-    schema_parser().parse(tokens).into_result()
-    // match schema_parser().parse(tokens).into_result() {
-    //     Ok(schema) => println!("{:?}", schema),
-    //     Err(errs) => {
-    //         for err in errs {
-    //             Report::build(ReportKind::Error, ((), err.span().into_range()))
-    //                 .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
-    //                 .with_code(3)
-    //                 .with_message(err.to_string())
-    //                 .with_label(
-    //                     Label::new(((), err.span().into_range()))
-    //                         .with_message(err.reason().to_string())
-    //                         .with_color(Color::Red),
-    //                 )
-    //                 .finish()
-    //                 .eprint(Source::from(src))
-    //                 .unwrap();
-    //         }
-    //     }
-    // }
+    schema_parser(source_name).parse(tokens).into_result()
 }
 
 #[test]
@@ -229,7 +212,7 @@ fn test_simple_table() {
             id: string
         }
     ";
-    match parse(schema) {
+    match parse("test.mecha", schema) {
         Ok(schema) => assert!(schema.tables.len() > 0),
         Err(_) => panic!("test failed"),
     }
@@ -242,7 +225,7 @@ fn test_abstract_table() {
             id: string
         }
     ";
-    match parse(schema) {
+    match parse("test.mecha", schema) {
         Ok(schema) => assert!(schema.tables.len() > 0),
         Err(_) => panic!("test failed"),
     }
@@ -255,7 +238,7 @@ fn test_abstract_table_extends() {
             id: string
         }
     ";
-    match parse(schema) {
+    match parse("test.mecha", schema) {
         Ok(schema) => assert!(schema.tables.len() > 0),
         Err(_) => panic!("test failed"),
     }
@@ -273,7 +256,7 @@ fn test_multiple_table() {
             id: string primary
         }
     ";
-    match parse(schema) {
+    match parse("test.mecha", schema) {
         Ok(schema) => assert!(schema.tables.len() > 0),
         Err(_) => panic!("test failed"),
     }
@@ -287,24 +270,9 @@ fn test_invalid_table_should_false() {
             updated_at: timestamp
         }
     ";
-    match parse(schema) {
+    match parse("test.mecha", schema) {
         Ok(schema) => assert!(schema.tables.len() > 0),
-        Err(errs) => {
-            for err in errs {
-                Report::build(ReportKind::Error, ((), err.span().into_range()))
-                    .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
-                    .with_code(11)
-                    .with_message(err.to_string())
-                    .with_label(
-                        Label::new(((), err.span().into_range()))
-                            .with_message(err.reason().to_string())
-                            .with_color(Color::Red),
-                    )
-                    .finish()
-                    .eprint(Source::from(schema))
-                    .unwrap();
-            }
-        }
+        Err(errs) => diagnose(schema, "test.mecha", errs),
     }
 }
 
@@ -318,23 +286,8 @@ fn test_indexed_table_should_ok() {
             }
         }
     ";
-    match parse(schema) {
+    match parse("test.mecha", schema) {
         Ok(schema) => assert!(schema.tables.len() > 0),
-        Err(errs) => {
-            for err in errs {
-                Report::build(ReportKind::Error, ((), err.span().into_range()))
-                    .with_config(ariadne::Config::new().with_index_type(ariadne::IndexType::Byte))
-                    .with_code(11)
-                    .with_message(err.to_string())
-                    .with_label(
-                        Label::new(((), err.span().into_range()))
-                            .with_message(err.reason().to_string())
-                            .with_color(Color::Red),
-                    )
-                    .finish()
-                    .eprint(Source::from(schema))
-                    .unwrap();
-            }
-        }
+        Err(errs) => diagnose(schema, "test.mecha", errs),
     }
 }

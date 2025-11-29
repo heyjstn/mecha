@@ -1,0 +1,10 @@
+table users {
+    id: uuid,
+    name: text,
+    password: text,
+    created_at: timestamp,
+    updated_at: timestamp
+    indexes {
+        id
+    }
+}
