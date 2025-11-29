@@ -1,0 +1,38 @@
+abstract table metadata {
+    created_at: timestamp,
+    updated_at: timestamp
+}
+
+table users extends metadata {
+    id: uuid (ref => user_vehicle.user_id),
+    username: text,
+    password: text
+}
+
+table vehicles extends metadata {
+    id: uuid (ref => user_vehicle.vehicle_id),
+    owner_id: uuid,
+    name: text,
+    model: text,
+    is_expired: boolean
+    indexes {
+        id,
+        owner_id
+    }
+}
+
+table user_vehicle extends metadata {
+    user_id: uuid,
+    vehicle_id: uuid,
+    note: text
+    indexes {
+        (user_id, vehicle_id)
+    }
+}
+
+table owners extends metadata {
+    id: uuid (ref => vehicles.owner_id),
+    username: text,
+    password: text,
+    ranking: number // higher the number, higher owner level
+}

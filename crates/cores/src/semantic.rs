@@ -22,7 +22,7 @@ impl Schema {
                     "table '{}' not exist in the inheritance context",
                     table_name
                 )
-                    .as_str(),
+                .as_str(),
             );
 
             let valid_column_names: HashSet<&str> =
@@ -89,6 +89,25 @@ impl Schema {
                     )];
                     return Err(errs);
                 }
+            }
+        }
+
+        for table in &mut self.tables {
+            if table.is_abstract {
+                continue;
+            }
+
+            let Some(parent_table) = &table.extended_by else {
+                continue;
+            };
+
+            let parent_table_name = parent_table.name.as_str();
+            let Some(parent_columns) = extension_context.get(parent_table_name) else {
+                continue;
+            };
+
+            for parent_column in parent_columns {
+                table.columns.push(parent_column.clone());
             }
         }
 
