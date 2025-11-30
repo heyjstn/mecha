@@ -6,8 +6,8 @@ use crate::lexer;
 use crate::lexer::Token;
 use chumsky::error::Rich;
 use chumsky::input::ValueInput;
-use chumsky::prelude::{end, SimpleSpan};
-use chumsky::{extra, select, IterParser, Parser};
+use chumsky::prelude::{SimpleSpan, end};
+use chumsky::{IterParser, Parser, extra, select};
 
 fn schema_parser<'tokens, 'src: 'tokens, I>(
     source_name: &str,

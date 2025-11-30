@@ -1,5 +1,5 @@
-use tower_lsp::{LspService, Server};
 use lsp::Backend;
+use tower_lsp::{LspService, Server};
 
 #[tokio::main]
 async fn main() {
